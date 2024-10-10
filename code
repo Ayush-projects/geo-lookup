@@ -1,15 +1,20 @@
-- name: Collect all unique keys
+- name: Initialize an empty dictionary for combined_data
   set_fact:
-    all_keys: "{{ (last_sync_response.keys() | list + last_heartbeat.keys() | list + last_password_set.keys() | list) | unique }}"
+    combined_data: {}
 
-- name: Combine data with default empty values for missing entries
+- name: Merge last_sync_response, last_heartbeat, and last_password_set
   set_fact:
-    combined_data: "{{ combined_data | default({}) | combine({ item: { 
-      'last_sync_response': last_sync_response.get(item, ''), 
-      'last_heartbeat': last_heartbeat.get(item, ''), 
-      'last_password_set': last_password_set.get(item, '') 
-    } }) }}"
-  loop: "{{ all_keys }}"
+    combined_data: >-
+      {{
+        combined_data | combine({
+          item: {
+            'last_sync_response': last_sync_response.get(item, ""),
+            'last_heartbeat': last_heartbeat.get(item, ""),
+            'last_password_set': last_password_set.get(item, "")
+          }
+        })
+      }}
+  loop: "{{ (last_sync_response.keys() | list + last_heartbeat.keys() | list + last_password_set.keys() | list) | unique }}"
   loop_control:
     label: "{{ item }}"
   no_log: true
