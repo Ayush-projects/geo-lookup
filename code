@@ -1,7 +1,12 @@
+- name: Initialize empty dictionary for last_sync_responses
+  set_fact:
+    last_sync_responses: {}
+
 - name: Transform stdout_lines into a dictionary
   set_fact:
-    last_sync_responses: "{{ last_sync_responses | combine({ item_id: item_timestamp }) }}"
+    last_sync_responses: "{{ last_sync_responses | combine({ (item.split(',')[0].strip(\"(' \")): item.split(',')[1].strip(\") '\") }) }}"
   loop: "{{ script_output.stdout_lines }}"
-  vars:
-    item_id: "{{ item.split(',')[0].strip(\"(' \") }}"
-    item_timestamp: "{{ item.split(',')[1].strip(\") '\") }}"
+
+- name: Print the final dictionary output
+  debug:
+    var: last_sync_responses
