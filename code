@@ -1,12 +1,17 @@
-- name: Initialize empty dictionary for last_sync_responses
+- name: Initialize empty list for accumulation
   set_fact:
-    last_sync_responses: {}
+    sync_entries: []
 
-- name: Transform stdout_lines into a dictionary
+- name: Append each item to the sync_entries list
   set_fact:
-    last_sync_responses: "{{ last_sync_responses | combine({ (item.split(',')[0].strip(\"(' \")): item.split(',')[1].strip(\") '\") }) }}"
+    sync_entries: "{{ sync_entries + [ { (item.split(',')[0].strip(\"(' \")): item.split(',')[1].strip(\") '\") } ] }}"
   loop: "{{ script_output.stdout_lines }}"
 
+- name: Convert list of dictionaries to a single dictionary
+  set_fact:
+    last_sync_responses: "{{ last_sync_responses | default({}) | combine(item) }}"
+  loop: "{{ sync_entries }}"
+  
 - name: Print the final dictionary output
   debug:
     var: last_sync_responses
