@@ -1,19 +1,7 @@
-class FilterModule(object):
-    def filters(self):
-        return {
-            'parse_sync_output': self.parse_sync_output
-        }
-    
-    def parse_sync_output(self, stdout_lines):
-        # Initialize the main dictionary with a nested dictionary for last_sync_responses
-        result = {"last_sync_responses": {}}
-        for line in stdout_lines:
-            # Clean and split the string
-            parts = line.strip("()' ").split(", ")
-            if len(parts) == 2:
-                # Assign the parsed values to the nested dictionary
-                item_id = parts[0].strip("' ")
-                timestamp = parts[1].strip("' ")
-                # Insert the entry into the last_sync_responses dictionary
-                result["last_sync_responses"][item_id] = timestamp
-        return result
+- name: Parse stdout_lines into a dictionary of dictionaries using custom filter
+  set_fact:
+    last_sync_responses: "{{ script_output.stdout_lines | parse_sync_output }}"
+
+- name: Print the final dictionary output
+  debug:
+    var: last_sync_responses
