@@ -1,12 +1,25 @@
-- name: Collect all unique device IDs
-  set_fact:
-    all_device_ids: "{{ (last_sync_response.keys() | list + last_heartbeat.keys() | list + last_password_set.keys() | list) | unique }}"
+from __future__ import absolute_import, division, print_function
+__metaclass__ = type
 
-- name: Initialize combined_data
-  set_fact:
-    combined_data: {}
+class FilterModule(object):
+    def filters(self):
+        return {
+            'combine_dicts': self.combine_dicts,
+        }
 
-- name: Build combined_data
-  set_fact:
-    combined_data: "{{ combined_data | combine({ item: {'last_sync_response': last_sync_response.get(item, ''), 'last_heartbeat': last_heartbeat.get(item, ''), 'last_password_set': last_password_set.get(item, '')} }, recursive=True) }}"
-  loop: "{{ all_device_ids }}"
+    def combine_dicts(self, last_sync_response, last_heartbeat, last_password_set):
+        combined_data = {}
+        all_keys = set()
+        # Collect all unique device IDs
+        all_keys.update(last_sync_response.keys())
+        all_keys.update(last_heartbeat.keys())
+        all_keys.update(last_password_set.keys())
+
+        # Combine data for each device ID
+        for key in all_keys:
+            combined_data[key] = {
+                'last_sync_response': last_sync_response.get(key, ''),
+                'last_heartbeat': last_heartbeat.get(key, ''),
+                'last_password_set': last_password_set.get(key, ''),
+            }
+        return combined_data
