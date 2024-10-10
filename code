@@ -1,18 +1,24 @@
-- name: Collect all unique keys
+- name: Collect all unique device IDs
   set_fact:
-    all_keys: "{{ (last_sync_response.keys() | list + last_heartbeat.keys() | list + last_password_set.keys() | list) | unique }}"
+    all_device_ids: "{{ (last_sync_response.keys() | list + last_heartbeat.keys() | list + last_password_set.keys() | list) | unique }}"
 
-- name: Combine data from all dictionaries into one
+
+
+- name: Create combined_data
   set_fact:
     combined_data: >-
       {{
-        dict((item, {
-          'last_sync_response': last_sync_response.get(item, ""),
-          'last_heartbeat': last_heartbeat.get(item, ""),
-          'last_password_set': last_password_set.get(item, "")
-        }) for item in all_keys)
+        dict(
+          [
+            (
+              device_id,
+              {
+                'last_sync_response': last_sync_response.get(device_id, ''),
+                'last_heartbeat': last_heartbeat.get(device_id, ''),
+                'last_password_set': last_password_set.get(device_id, '')
+              }
+            )
+            for device_id in all_device_ids
+          ]
+        )
       }}
-
-- name: Display the final combined dictionary
-  debug:
-    var: combined_data
