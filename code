@@ -1,18 +1,15 @@
-- name: Initialize an empty dictionary for combined_data
+- name: Combine data with suppressed output
   set_fact:
-    combined_data: {}
+    combined_data: >-
+      {{
+        dict((item, {
+          'last_sync_response': last_sync_response.get(item, ""),
+          'last_heartbeat': last_heartbeat.get(item, ""),
+          'last_password_set': last_password_set.get(item, "")
+        }) for item in (last_sync_response.keys() | list + last_heartbeat.keys() | list + last_password_set.keys() | list | unique))
+      }}
+  no_log: true
 
-- name: Collect all unique keys
-  set_fact:
-    all_keys: "{{ (last_sync_response.keys() | list + last_heartbeat.keys() | list + last_password_set.keys() | list) | unique }}"
-
-- name: Combine all dictionaries with default empty values
-  set_fact:
-    combined_data: "{{ combined_data | combine({ item: { 'last_sync_response': last_sync_response.get(item, ''), 'last_heartbeat': last_heartbeat.get(item, ''), 'last_password_set': last_password_set.get(item, '') } }) }}"
-  loop: "{{ all_keys }}"
-  loop_control:
-    label: "{{ item }}"
-
-- name: Print the final combined dictionary
+- name: Display the final combined dictionary
   debug:
     var: combined_data
