@@ -1,7 +1,18 @@
-- name: Parse stdout_lines into a dictionary of dictionaries using custom filter
+- name: Initialize an empty dictionary for combined_data
   set_fact:
-    last_sync_responses: "{{ script_output.stdout_lines | parse_sync_output }}"
+    combined_data: {}
 
-- name: Print the final dictionary output
+- name: Collect all unique keys
+  set_fact:
+    all_keys: "{{ (last_sync_response.keys() | list + last_heartbeat.keys() | list + last_password_set.keys() | list) | unique }}"
+
+- name: Combine all dictionaries with default empty values
+  set_fact:
+    combined_data: "{{ combined_data | combine({ item: { 'last_sync_response': last_sync_response.get(item, ''), 'last_heartbeat': last_heartbeat.get(item, ''), 'last_password_set': last_password_set.get(item, '') } }) }}"
+  loop: "{{ all_keys }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Print the final combined dictionary
   debug:
-    var: last_sync_responses
+    var: combined_data
