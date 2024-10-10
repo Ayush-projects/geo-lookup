@@ -3,6 +3,5 @@
     last_sync_responses: "{{ last_sync_responses | combine({ item_id: item_timestamp }) }}"
   loop: "{{ script_output.stdout_lines }}"
   vars:
-    # Adjusted regex with double backslashes to properly escape in YAML
-    item_id: "{{ item | regex_replace('\\(\\'([^\\']+)\\'.*', '\\1') }}"
-    item_timestamp: "{{ item | regex_replace('.*,\\s*\\'(.*?)\\'\\)', '\\1') }}"
+    item_id: "{{ item.split(',')[0].strip(\"(' \") }}"
+    item_timestamp: "{{ item.split(',')[1].strip(\") '\") }}"
