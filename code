@@ -1,7 +1,31 @@
-- name: Merge dictionaries using custom filter
-  set_fact:
-    combined_data: "{{ last_sync_response | merge_dicts_with_defaults(last_heartbeat, last_password_set) }}"
+# CheckEthernet.ps1
 
-- name: Display the final combined dictionary
-  debug:
-    var: combined_data
+# Function to check network connectivity
+function Test-NetworkConnection {
+    # Get all network adapters with operational status 'Up'
+    $adapters = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' }
+
+    foreach ($adapter in $adapters) {
+        # Get the network connection profile associated with the adapter
+        $profile = Get-NetConnectionProfile -InterfaceIndex $adapter.ifIndex -ErrorAction SilentlyContinue
+        if ($profile -and $profile.NetworkCategory -ne 'Undefined') {
+            # Network is connected and identified
+            return $true
+        }
+    }
+    return $false
+}
+
+# Loop until connected
+while (-not (Test-NetworkConnection)) {
+    Write-Host "Network is not connected or still identifying. Killing OOBENetworkConnectionFlow.exe..."
+
+    # Force kill OOBENetworkConnectionFlow.exe as admin
+    Get-Process -Name "OOBENetworkConnectionFlow" -ErrorAction SilentlyContinue | Stop-Process -Force
+
+    # Wait for 10 seconds
+    Start-Sleep -Seconds 10
+}
+
+Write-Host "Connected to the network."
+exit 0
