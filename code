@@ -1,31 +1,9 @@
-# CheckEthernet.ps1
+xcopy "\\NetworkShare\Scripts\CheckEthernet.ps1" "C:\Scripts\" /Y
 
-# Function to check network connectivity
-function Test-NetworkConnection {
-    # Get all network adapters with operational status 'Up'
-    $adapters = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' }
 
-    foreach ($adapter in $adapters) {
-        # Get the network connection profile associated with the adapter
-        $profile = Get-NetConnectionProfile -InterfaceIndex $adapter.ifIndex -ErrorAction SilentlyContinue
-        if ($profile -and $profile.NetworkCategory -ne 'Undefined') {
-            # Network is connected and identified
-            return $true
-        }
-    }
-    return $false
-}
+powershell -Command "Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force"
 
-# Loop until connected
-while (-not (Test-NetworkConnection)) {
-    Write-Host "Network is not connected or still identifying. Killing OOBENetworkConnectionFlow.exe..."
+schtasks /Create /TN "CheckEthernetConnection" ^
+/TR "powershell.exe -ExecutionPolicy Bypass -File \"C:\Scripts\CheckEthernet.ps1\"" ^
+/SC ONSTART /RL HIGHEST /RU "SYSTEM"
 
-    # Force kill OOBENetworkConnectionFlow.exe as admin
-    Get-Process -Name "OOBENetworkConnectionFlow" -ErrorAction SilentlyContinue | Stop-Process -Force
-
-    # Wait for 10 seconds
-    Start-Sleep -Seconds 10
-}
-
-Write-Host "Connected to the network."
-exit 0
