@@ -1,9 +1,101 @@
-xcopy "\\NetworkShare\Scripts\CheckEthernet.ps1" "C:\Scripts\" /Y
+flowchart TD
+    %% Define styles for visual enhancement
+    classDef userStyle fill:#f9f,stroke:#333,stroke-width:2px,color:#000,font-weight:bold;
+    classDef processStyle fill:#9f9,stroke:#333,stroke-width:2px,color:#000;
+    classDef apiStyle fill:#6cf,stroke:#333,stroke-width:2px,color:#000;
+    classDef componentStyle fill:#fc9,stroke:#333,stroke-width:2px,color:#000;
+    classDef libraryStyle fill:#ccf,stroke:#333,stroke-width:2px,color:#000,font-style:italic;
 
+    %% User Interaction
+    A[User Initiates Action]
+    class A userStyle
 
-powershell -Command "Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force"
+    %% Extension Activation
+    A --> B[Extension Activates]
+    class B processStyle
 
-schtasks /Create /TN "CheckEthernetConnection" ^
-/TR "powershell.exe -ExecutionPolicy Bypass -File \"C:\Scripts\CheckEthernet.ps1\"" ^
-/SC ONSTART /RL HIGHEST /RU "SYSTEM"
+    %% Visual Studio Code Language Model API
+    B --> C[Invoke VSCode Language Model API]
+    class C apiStyle
 
+    %% LLM Invocation
+    C --> D[Invoke LLM]
+    class D apiStyle
+
+    %% Workspace Scanner
+    D --> E[Scan Workspace Files]
+    class E processStyle
+
+    %% File Summarizer
+    E --> F[Summarize Files]
+    class F processStyle
+
+    %% Generate Mermaid.js Code
+    F --> G[Generate Mermaid.js Diagram Code]
+    class G componentStyle
+
+    %% Web Panel Renderer
+    G --> H[Render Diagram in Web Panel]
+    class H componentStyle
+
+    %% Display in Web-based Editor
+    H --> I[Display Diagram to User]
+    class I userStyle
+
+    %% Underlying Open Source Libraries
+    subgraph "Open Source Libraries"
+        J[Mermaid.js Library]
+        K[Additional Open Source Libraries]
+    end
+    class J,K libraryStyle
+
+    %% Connections to Libraries
+    H --> J
+    H --> K
+
+    %% Optional Components for Interactivity
+    %% User Edits Diagram
+    I -- User Edits Diagram --> L[Edit Diagram Interactively]
+    class L userStyle
+    L --> G
+
+    %% Export Functionality
+    I --> M[Export Diagram]
+    class M componentStyle
+
+    %% Add Tooltips for Nodes
+    A:::tooltip
+    B:::tooltip
+    C:::tooltip
+    D:::tooltip
+    E:::tooltip
+    F:::tooltip
+    G:::tooltip
+    H:::tooltip
+    I:::tooltip
+    J:::tooltip
+    K:::tooltip
+    L:::tooltip
+    M:::tooltip
+
+    classDef tooltip fill:#fff,stroke:#333,stroke-width:1px,color:#000;
+
+    %% Define clickable links (if rendered in an environment that supports it)
+    click J "https://mermaid-js.github.io/mermaid/#/" "Mermaid.js Documentation"
+    click K "https://opensource.org/" "Open Source Resources"
+
+    %% Add styling to the subgraph
+    style "Open Source Libraries" fill:#eef,stroke:#333,stroke-width:2px
+
+    %% Legend (if needed)
+    subgraph Legend
+        direction LR
+        U[User Interaction]:::userStyle
+        P[Process]:::processStyle
+        A[API Call]:::apiStyle
+        C[Component]:::componentStyle
+        L[Library]:::libraryStyle
+    end
+
+    %% Arrange subgraph position
+    class Legend userStyle
