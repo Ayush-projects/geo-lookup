@@ -1,10 +1,10 @@
 flowchart TD
     %% Define styles for visual enhancement
-    classDef userStyle fill:#f9f,stroke:#333,stroke-width:2px,color:#000,font-weight:bold;
-    classDef processStyle fill:#9f9,stroke:#333,stroke-width:2px,color:#000;
-    classDef apiStyle fill:#6cf,stroke:#333,stroke-width:2px,color:#000;
-    classDef componentStyle fill:#fc9,stroke:#333,stroke-width:2px,color:#000;
-    classDef libraryStyle fill:#ccf,stroke:#333,stroke-width:2px,color:#000,font-style:italic;
+    classDef userStyle fill:#f9f,stroke:#333,stroke-width:2px,color:#000,font-weight:bold
+    classDef processStyle fill:#9f9,stroke:#333,stroke-width:2px,color:#000
+    classDef apiStyle fill:#6cf,stroke:#333,stroke-width:2px,color:#000
+    classDef componentStyle fill:#fc9,stroke:#333,stroke-width:2px,color:#000
+    classDef libraryStyle fill:#ccf,stroke:#333,stroke-width:2px,color:#000,font-style:italic
 
     %% User Interaction
     A[User Initiates Action]
@@ -43,11 +43,12 @@ flowchart TD
     class I userStyle
 
     %% Underlying Open Source Libraries
-    subgraph "Open Source Libraries"
+    subgraph sub1 [Open Source Libraries]
         J[Mermaid.js Library]
+        class J libraryStyle
         K[Additional Open Source Libraries]
+        class K libraryStyle
     end
-    class J,K libraryStyle
 
     %% Connections to Libraries
     H --> J
@@ -63,29 +64,12 @@ flowchart TD
     I --> M[Export Diagram]
     class M componentStyle
 
-    %% Add Tooltips for Nodes
-    A:::tooltip
-    B:::tooltip
-    C:::tooltip
-    D:::tooltip
-    E:::tooltip
-    F:::tooltip
-    G:::tooltip
-    H:::tooltip
-    I:::tooltip
-    J:::tooltip
-    K:::tooltip
-    L:::tooltip
-    M:::tooltip
-
-    classDef tooltip fill:#fff,stroke:#333,stroke-width:1px,color:#000;
-
     %% Define clickable links (if rendered in an environment that supports it)
     click J "https://mermaid-js.github.io/mermaid/#/" "Mermaid.js Documentation"
     click K "https://opensource.org/" "Open Source Resources"
 
     %% Add styling to the subgraph
-    style "Open Source Libraries" fill:#eef,stroke:#333,stroke-width:2px
+    style sub1 fill:#eef,stroke:#333,stroke-width:2px
 
     %% Legend (if needed)
     subgraph Legend
@@ -96,6 +80,5 @@ flowchart TD
         C[Component]:::componentStyle
         L[Library]:::libraryStyle
     end
-
-    %% Arrange subgraph position
-    class Legend userStyle
+   
+    
