@@ -1,5 +1,44 @@
-User Request: A data analyst needs to retrieve specific data (e.g., total sales by product category for the last quarter) but lacks SQL expertise to write the query manually.
+flowchart LR
+    %% Define Styles for Visual Appeal
+    style A fill:#e0f7fa,stroke:#00acc1,stroke-width:2px,stroke-dasharray: 5 5
+    style B fill:#e3f2fd,stroke:#42a5f5,stroke-width:2px,stroke-dasharray: 5 5
+    style C fill:#ffecb3,stroke:#ffca28,stroke-width:2px
+    style D fill:#fff9c4,stroke:#fdd835,stroke-width:2px
+    style E fill:#d7ccc8,stroke:#8d6e63,stroke-width:2px
+    style F fill:#c8e6c9,stroke:#66bb6a,stroke-width:2px,stroke-dasharray: 5 5
+    style G fill:#f3e5f5,stroke:#ab47bc,stroke-width:2px
+    style H fill:#f8bbd0,stroke:#ec407a,stroke-width:2px
+    style I fill:#e8eaf6,stroke:#3f51b5,stroke-width:2px
+    style J fill:#ffe0b2,stroke:#ff7043,stroke-width:2px
 
-Solution: Using the VS Code extension, the analyst types a natural language request, which is automatically converted into an SQL query based on the database schema. A "Run Query" button is generated to execute the query within VS Code.
+    %% Workflow Section
+    subgraph "Natural Language Database Query Workflow"
+        direction LR
+        A([User Types Query in Natural Language]) --> B[Service Layer Fetches Database Schema]
 
-Outcome: The analyst quickly obtains the required data without needing SQL knowledge, enabling timely data analysis and enhancing productivity.
+        subgraph "Database Context Retrieval"
+            B --> C[Retrieve Table Structures]
+            B --> D[Retrieve Views & Stored Procedures]
+            B --> E[Retrieve Database Schema Metadata]
+        end
+        
+        F[Combine User Query with Retrieved Context] --> G[Send to LLM for Query Translation]
+
+        subgraph "LLM Query Generation"
+            G --> H{LLM Processes Context}
+            H --> I[Generate SQL/NoSQL Query from Natural Language]
+        end
+
+        I --> J[Display Run Query Button in VS Code Panel] --> K[Execute Query with Python]
+        K --> L[Show Results in VS Code Panel]
+    end
+
+    %% Styling Nodes for Better Flow
+    style K fill:#c5e1a5,stroke:#558b2f,stroke-width:2px
+    style L fill:#d1c4e9,stroke:#673ab7,stroke-width:2px
+
+    %% Connections and Arrow Descriptions
+    B -- Schema Data --> F
+    D -- Context --> F
+    E -- Metadata --> F
+    F -- User's Natural Language Request --> G
