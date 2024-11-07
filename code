@@ -1,44 +1,35 @@
-flowchart LR
-    %% Define Styles for Visual Appeal
-    style A fill:#e0f7fa,stroke:#00acc1,stroke-width:2px,stroke-dasharray: 5 5
-    style B fill:#e3f2fd,stroke:#42a5f5,stroke-width:2px,stroke-dasharray: 5 5
-    style C fill:#ffecb3,stroke:#ffca28,stroke-width:2px
+flowchart TD
+    %% Define Styles for Each Node
+    style A fill:#e0f7fa,stroke:#0288d1,stroke-width:2px
+    style B fill:#bbdefb,stroke:#1976d2,stroke-width:2px
+    style C fill:#ffecb3,stroke:#ff6f00,stroke-width:2px
     style D fill:#fff9c4,stroke:#fdd835,stroke-width:2px
-    style E fill:#d7ccc8,stroke:#8d6e63,stroke-width:2px
-    style F fill:#c8e6c9,stroke:#66bb6a,stroke-width:2px,stroke-dasharray: 5 5
-    style G fill:#f3e5f5,stroke:#ab47bc,stroke-width:2px
-    style H fill:#f8bbd0,stroke:#ec407a,stroke-width:2px
-    style I fill:#e8eaf6,stroke:#3f51b5,stroke-width:2px
-    style J fill:#ffe0b2,stroke:#ff7043,stroke-width:2px
+    style E fill:#d1c4e9,stroke:#7b1fa2,stroke-width:2px
+    style F fill:#f8bbd0,stroke:#ec407a,stroke-width:2px
+    style G fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    style H fill:#e8eaf6,stroke:#3f51b5,stroke-width:2px
+    style I fill:#ffe0b2,stroke:#ff7043,stroke-width:2px
+    style J fill:#f3e5f5,stroke:#ab47bc,stroke-width:2px
 
-    %% Workflow Section
-    subgraph "Natural Language Database Query Workflow"
-        direction LR
-        A([User Types Query in Natural Language]) --> B[Service Layer Fetches Database Schema]
+    %% Flowchart Workflow with Detailed Steps
+    A([User Inputs Query in Natural Language]) --> B[Fetch Database Schema Information]
 
-        subgraph "Database Context Retrieval"
-            B --> C[Retrieve Table Structures]
-            B --> D[Retrieve Views & Stored Procedures]
-            B --> E[Retrieve Database Schema Metadata]
-        end
-        
-        F[Combine User Query with Retrieved Context] --> G[Send to LLM for Query Translation]
+    %% Decision Point for Schema Retrieval
+    B --> C{Schema Available?}
+    C -- Yes --> D[Retrieve Tables, Views, Stored Procedures, and Metadata]
+    C -- No --> I[Show Error: Schema Not Accessible]
 
-        subgraph "LLM Query Generation"
-            G --> H{LLM Processes Context}
-            H --> I[Generate SQL/NoSQL Query from Natural Language]
-        end
+    %% Combine Context and User Query
+    D --> E[Combine User Query with Database Context]
+    
+    %% Send to LLM for Translation
+    E --> F{Send to LLM for Query Generation}
+    F --> G{LLM Generates SQL/NoSQL Query?}
+    G -- Yes --> H[Display Run Query Button in VS Code Panel]
+    G -- No --> I[Show Error: Query Generation Failed]
 
-        I --> J[Display Run Query Button in VS Code Panel] --> K[Execute Query with Python]
-        K --> L[Show Results in VS Code Panel]
-    end
-
-    %% Styling Nodes for Better Flow
-    style K fill:#c5e1a5,stroke:#558b2f,stroke-width:2px
-    style L fill:#d1c4e9,stroke:#673ab7,stroke-width:2px
-
-    %% Connections and Arrow Descriptions
-    B -- Schema Data --> F
-    D -- Context --> F
-    E -- Metadata --> F
-    F -- User's Natural Language Request --> G
+    %% Execute and Display Results
+    H --> J{Run Query in Python?}
+    J -- Success --> K[Execute Query in Python]
+    K --> L[Show Results in VS Code Panel]
+    J -- Failure --> I[Show Error: Query Execution Failed]
