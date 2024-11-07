@@ -1,7 +1,5 @@
-The architecture of this VS Code extension is designed to simplify database interactions by enabling natural language querying. When a user enters a query in plain language, the extension first connects to the database’s schema through a service layer, retrieving relevant information such as tables, views, stored procedures, and metadata to build a context for the query. This context, combined with the user’s request, is sent to an LLM (e.g., OpenAI's model), which translates it into a precise SQL/NoSQL query. The extension then displays a “Run Query” button, allowing the user to execute the generated query through a Python integration. Results are shown directly in VS Code, providing an accessible, seamless database querying experience. This architecture is built to handle errors at each stage, offering feedback if any step fails, ensuring a reliable user experience.
+Service Layer: Facilitates secure access to on-premise or external databases, enabling the extension to retrieve schema information like tables, views, and stored procedures without direct user intervention.
 
+Language Model Integration: Utilizes a powerful LLM to interpret natural language inputs and generate accurate SQL/NoSQL queries, bridging the gap between non-technical users and complex database querying.
 
-
-
-
-
+Error Handling and Feedback: Includes robust error-handling mechanisms at each step—from schema retrieval to query execution—ensuring users receive actionable feedback in case of issues, enhancing reliability and usability.
