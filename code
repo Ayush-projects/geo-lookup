@@ -1,35 +1,7 @@
-flowchart TD
-    %% Define Styles for Each Node
-    style A fill:#e0f7fa,stroke:#0288d1,stroke-width:2px
-    style B fill:#bbdefb,stroke:#1976d2,stroke-width:2px
-    style C fill:#ffecb3,stroke:#ff6f00,stroke-width:2px
-    style D fill:#fff9c4,stroke:#fdd835,stroke-width:2px
-    style E fill:#d1c4e9,stroke:#7b1fa2,stroke-width:2px
-    style F fill:#f8bbd0,stroke:#ec407a,stroke-width:2px
-    style G fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
-    style H fill:#e8eaf6,stroke:#3f51b5,stroke-width:2px
-    style I fill:#ffe0b2,stroke:#ff7043,stroke-width:2px
-    style J fill:#f3e5f5,stroke:#ab47bc,stroke-width:2px
+The architecture of this VS Code extension is designed to simplify database interactions by enabling natural language querying. When a user enters a query in plain language, the extension first connects to the database’s schema through a service layer, retrieving relevant information such as tables, views, stored procedures, and metadata to build a context for the query. This context, combined with the user’s request, is sent to an LLM (e.g., OpenAI's model), which translates it into a precise SQL/NoSQL query. The extension then displays a “Run Query” button, allowing the user to execute the generated query through a Python integration. Results are shown directly in VS Code, providing an accessible, seamless database querying experience. This architecture is built to handle errors at each stage, offering feedback if any step fails, ensuring a reliable user experience.
 
-    %% Flowchart Workflow with Detailed Steps
-    A([User Inputs Query in Natural Language]) --> B[Fetch Database Schema Information]
 
-    %% Decision Point for Schema Retrieval
-    B --> C{Schema Available?}
-    C -- Yes --> D[Retrieve Tables, Views, Stored Procedures, and Metadata]
-    C -- No --> I[Show Error: Schema Not Accessible]
 
-    %% Combine Context and User Query
-    D --> E[Combine User Query with Database Context]
-    
-    %% Send to LLM for Translation
-    E --> F{Send to LLM for Query Generation}
-    F --> G{LLM Generates SQL/NoSQL Query?}
-    G -- Yes --> H[Display Run Query Button in VS Code Panel]
-    G -- No --> I[Show Error: Query Generation Failed]
 
-    %% Execute and Display Results
-    H --> J{Run Query in Python?}
-    J -- Success --> K[Execute Query in Python]
-    K --> L[Show Results in VS Code Panel]
-    J -- Failure --> I[Show Error: Query Execution Failed]
+
+
