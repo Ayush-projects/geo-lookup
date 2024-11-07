@@ -1,84 +1,45 @@
 flowchart TD
-    %% Define styles for visual enhancement
-    classDef userStyle fill:#f9f,stroke:#333,stroke-width:2px,color:#000,font-weight:bold
-    classDef processStyle fill:#9f9,stroke:#333,stroke-width:2px,color:#000
-    classDef apiStyle fill:#6cf,stroke:#333,stroke-width:2px,color:#000
-    classDef componentStyle fill:#fc9,stroke:#333,stroke-width:2px,color:#000
-    classDef libraryStyle fill:#ccf,stroke:#333,stroke-width:2px,color:#000,font-style:italic
+    style A fill:#e0f7fa,stroke:#00838f,stroke-width:2px
+    style B fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style C fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style D fill:#ffecb3,stroke:#ff6f00,stroke-width:2px
+    style E fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+    style F fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+    style G fill:#f1f8e9,stroke:#558b2f,stroke-width:2px
+    style H fill:#ffebee,stroke:#c62828,stroke-width:2px
+    style I fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+    style J fill:#ede7f6,stroke:#4527a0,stroke-width:2px
+    style K fill:#f1f8e9,stroke:#558b2f,stroke-width:2px
+    style L fill:#ffebee,stroke:#c62828,stroke-width:2px
+    style M fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style Z fill:#fafafa,stroke:#9e9e9e,stroke-width:2px
 
-    %% User Interaction
-    A[User Initiates Action]
-    class A userStyle
+    subgraph Workflow
+        A([Start Commit Process]) --> B([Pre-Commit Hook Triggered])
 
-    %% Extension Activation
-    A --> B[Extension Activates]
-    class B processStyle
+        B --> C([Capture Git Diff])
+        C --> D{Perform Security Scan}
+        
+        subgraph "Security Scan"
+            D --> E([Regex-based Secret Detection])
+            D --> F([TruffleHog Scan])
+        end
+        
+        E --> G{Secrets Found?}
+        F --> G
 
-    %% Visual Studio Code Language Model API
-    B --> C[Invoke VSCode Language Model API]
-    class C apiStyle
+        G -- Yes --> H([Stop Commit and Display Error Message])
+        G -- No --> I([Invoke LLM Code Review])
 
-    %% LLM Invocation
-    C --> D[Invoke LLM]
-    class D apiStyle
+        subgraph "LLM Code Review"
+            I --> J([Send Code to LLM GitHub Copilot])
+            J --> K{LLM Review Result}
+        end
 
-    %% Workspace Scanner
-    D --> E[Scan Workspace Files]
-    class E processStyle
+        K -- Issues Found --> L([Stop Commit and Display Issues])
+        K -- No Issues --> M([Allow Commit to Proceed])
 
-    %% File Summarizer
-    E --> F[Summarize Files]
-    class F processStyle
-
-    %% Generate Mermaid.js Code
-    F --> G[Generate Mermaid.js Diagram Code]
-    class G componentStyle
-
-    %% Web Panel Renderer
-    G --> H[Render Diagram in Web Panel]
-    class H componentStyle
-
-    %% Display in Web-based Editor
-    H --> I[Display Diagram to User]
-    class I userStyle
-
-    %% Underlying Open Source Libraries
-    subgraph sub1 [Open Source Libraries]
-        J[Mermaid.js Library]
-        class J libraryStyle
-        K[Additional Open Source Libraries]
-        class K libraryStyle
+        H --> Z([End Process])
+        L --> Z
+        M --> Z
     end
-
-    %% Connections to Libraries
-    H --> J
-    H --> K
-
-    %% Optional Components for Interactivity
-    %% User Edits Diagram
-    I -- User Edits Diagram --> L[Edit Diagram Interactively]
-    class L userStyle
-    L --> G
-
-    %% Export Functionality
-    I --> M[Export Diagram]
-    class M componentStyle
-
-    %% Define clickable links (if rendered in an environment that supports it)
-    click J "https://mermaid-js.github.io/mermaid/#/" "Mermaid.js Documentation"
-    click K "https://opensource.org/" "Open Source Resources"
-
-    %% Add styling to the subgraph
-    style sub1 fill:#eef,stroke:#333,stroke-width:2px
-
-    %% Legend (if needed)
-    subgraph Legend
-        direction LR
-        U[User Interaction]:::userStyle
-        P[Process]:::processStyle
-        A[API Call]:::apiStyle
-        C[Component]:::componentStyle
-        L[Library]:::libraryStyle
-    end
-   
-    
