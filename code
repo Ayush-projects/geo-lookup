@@ -1,13 +1,5 @@
-Natural Language Querying: Users can write database queries in plain language, eliminating the need for complex SQL/NoSQL syntax knowledge.
+User Request: A data analyst needs to retrieve specific data (e.g., total sales by product category for the last quarter) but lacks SQL expertise to write the query manually.
 
-Automated Context Creation: The extension fetches relevant database schema information (tables, views, stored procedures, etc.) to build context around the user's query request.
+Solution: Using the VS Code extension, the analyst types a natural language request, which is automatically converted into an SQL query based on the database schema. A "Run Query" button is generated to execute the query within VS Code.
 
-LLM Query Generation: Leveraging a language model, the extension translates natural language queries into accurate SQL/NoSQL statements based on the database context.
-
-Dynamic Query Execution: A "Run Query" button is generated for each query, allowing users to execute the query directly within VS Code.
-
-Real-Time Results Display: Query results are shown in a dedicated panel in VS Code, providing users with instant feedback and insights.
-
-Seamless Database Integration: The extension uses a service layer to interact securely with on-premise or external databases, ensuring a reliable connection and data access.
-
-Enhanced Accessibility and Productivity: Non-technical and technical users alike can quickly retrieve data, fostering collaboration, reducing delays, and improving workflow efficiency.
+Outcome: The analyst quickly obtains the required data without needing SQL knowledge, enabling timely data analysis and enhancing productivity.
