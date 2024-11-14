@@ -1,15 +1,14 @@
+Real-Time Product Feedback
+Capture instant feedback from users on their experience with WxPS products like WAVE, Teams, M365, Hubs, and W365 using Symphony pop-ups. This allows for timely insights into user satisfaction across various products.
 
-Here’s the content for the solution and desired state slide in bullet points:
+Automated Issue Resolution with NLP
+When users report a negative experience, the system utilizes NLP to analyze their input and suggest relevant knowledge base articles or ServiceNow resolutions, offering a quick path to resolve common issues without human intervention.
 
-Solution
-Instant Feedback Collection: Use Symphony pop-ups to capture immediate user feedback on product interactions (Happy, Neutral, or Bad).
-Automated Issue Analysis: Apply NLP algorithms to analyze feedback and identify underlying issues when users select a "Bad" rating.
-AI-Driven Resolution Suggestions: Suggest relevant knowledge base articles or ServiceNow resolutions based on the identified issues to assist users instantly.
-Ticket Escalation Option: Provide an option for users to raise a support ticket if their issue remains unresolved after suggested solutions.
-Data Aggregation and Reporting: Collate feedback metrics to generate actionable insights and satisfaction trends across WxPS products.
-Desired State
-Proactive Issue Resolution: Minimize support time by addressing issues through automated suggestions before they escalate.
-Enhanced Customer Satisfaction: Increase user satisfaction by providing quick, relevant responses and empowering users to resolve issues independently.
-Data-Driven Decision Making: Enable continuous improvement of WxPS products through insights derived from real-time user feedback.
-Streamlined Support Workflow: Reduce manual intervention in support processes, allowing teams to focus on high-priority tasks and complex issues.
-Scalable AI Impact: Create a feedback system that can be scaled across multiple products, maximizing the reach and effectiveness of AI in customer support.
+Proactive Support for Recurrent Issues
+Identify patterns in negative feedback to address recurring issues across the user base. This enables the WxPS team to proactively fix common pain points, improving the overall product experience over time.
+
+Escalation for Complex Problems
+Provide users the option to escalate unresolved issues by raising a support ticket directly from the feedback interface. This ensures that complex problems receive the attention they need from support teams.
+
+Customer Satisfaction Metrics and Insights
+Aggregate feedback data to create detailed reports and dashboards, providing WxPS leadership with insights into product performance, user satisfaction trends, and areas for improvement. These metrics can inform future product enhancements and support strategies.
