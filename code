@@ -1,1 +1,52 @@
-https://mermaid.live/view#pako:eNqlVVtv6zYM_iuEDw6wAU5P0pzm4gEbcuklTZsVTYdhdfKg2HQi1JEMSW6bxf3vo3yJ3YM9bQYSSxT5kfxI0UcnkCE6nhPF8i3YMWXgaboSQM_XrzDFiAuEpTnEqAtpEDOtSQ6JkgFqDRGPY-9LNIxcbZR8Qe9Lt9st1603Hpqdd568u4FUAlVLsZCn2hsk77_8gBcyw0qwzeZ_g2HANZfiFF3vvwGuxImLpbHkMBHCJf0WxFrJyMjPj9bQav2a_aFRwUwYVCwwFEAGY3952Cc7KQ7wIJNWmsCT4tstKgzXBcCzbxEfCj7XDZd_SvVi61IIxtYBFB40xhgYDVeI4YYFLxlM_GoNExnbU_JeOpgUlo_McLH14IYlyeHbAlOjWPxtzMIMpsdZDQYk-u2jIsD-T_PcFjKDa0pWKqx1uYApVW7DNJbergtv10iMMkPdQ251VNAB92gUD3QGz1WeBfZfSLJLP09uijpQfIMaZlqnFexlDnvlL-4eYCRYfNBcg4ygZDxJzboZ8lURxSxEYXh0gEdi7JUJQ-xQdYTJ4OZ4z0ywgyuZEv2Ux3wMUsES1SsPcCHfLAcF2E0d48xfplQ9bQhRyzjNszIyD6MMYJa7vrWU5gkUmq_4A6m3Neh1U2Jpnvu_JxXyI-OaWEyTRNrbyYMXNKcumRdpFtJClcp5V1aJkqrTKaO7yy2eG21m6wfWgG3x1GpnpDQd-z9Vxf25rm5xdMq1ub2rtyf4Jwx2ggcshpEKdtxQa6aqdKTTzVaxZAfLgza4_xeNU-dno4cZTFgcZ42cSObXO6DtujbLWyB7wndTXS5q_wyogfzRzL7oJm9pvjVMPiHnRFWZ2ceaWNmceJkL-RZjuEW6LTU7Ta1PWMUxirBBzMROKztFGsMLxu7EvXZn1XhtDjaYujfu7Wm2fT4au5_8uRSFSw1tpyopOq6zR7VnPKRRf7SGK8fscI8rx6NliBFLY7NyVuKDVFlq5PIgAsczKkXXSROCwSlnVKt9JcSQU8vcF1-P_CPiOgkTz1KeVGjreEfn3fE6_fbZebc97Pfa_fZF76I9cJ2D47W6Z91-96Iz7A57F_1BuzP4_uE6f-cQ7bPhsD_sfO_1O4NhfzAYnLuOkul253gRizV-_AMtpR3R
+flowchart TD
+    %% Define Styles
+    classDef process fill:#f9f,stroke:#333,stroke-width:2px,corner-radius:8px;
+    classDef data fill:#bbf,stroke:#333,stroke-width:2px,corner-radius:8px;
+    classDef decision fill:#f96,stroke:#333,stroke-width:2px,corner-radius:8px;
+    
+
+    %% Start and End Nodes
+    A[Start] -->|User Interaction| B[Symphony Pop-up Triggered]
+    Z[End Process]
+
+    %% Workflow
+    B --> |User selects Feedback| C[Feedback Collection]
+    C --> |Rating: Happy/Neutral/Bad| D{Is Feedback Bad?}
+    
+    D -->|No| G[Store Feedback in Database]
+    G --> |Generate Satisfaction Metrics| Z
+
+    D -->|Yes| E[User Describes Issue]
+    E --> F[NLP Analysis of User Input]
+    
+    F --> |Identify Relevant Content| H{Match Found in KB or ServiceNow?}
+
+    H -->|Yes| I[Suggest Resolution to User]
+    I --> J{Is Issue Resolved?}
+    
+    J -->|Yes| G
+    J -->|No| K[Option to Raise Support Ticket]
+
+    K --> |Ticket Raised| L[Store in ServiceNow]
+    L --> Z
+
+    %% Data Storage
+    B -.-> DB[(Database)]
+    G -.-> DB
+    I -.-> DB
+    L -.-> DB
+
+    %% Technical Architecture
+    subgraph System Architecture
+        B -->|API Call| ServiceNowAPI[ServiceNow API]
+        F -->|Text Processing| NLP[AI NLP Engine]
+        ServiceNowAPI --> DB
+        NLP --> KB[(Knowledge Base)]
+        NLP --> ServiceNowAPI
+    end
+
+    %% Classes
+
+    class B,C,G,I process;
+    class D,H,J decision;
+    class DB,ServiceNowAPI,NLP,KB data;
