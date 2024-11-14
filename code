@@ -1,10 +1,6 @@
+Purpose
+The WxPS Customer Satisfaction Weather Report project aims to leverage AI to enhance customer satisfaction and streamline issue resolution. By implementing real-time feedback collection and NLP-driven support suggestions, we are creating an intelligent feedback loop that not only empowers end-users but also drives continuous improvement across WxPS products. This initiative is designed to reduce support time, optimize resources, and provide best-in-class service by proactively addressing user concerns.
 
-Memory updated
-Here's a version tailored for an AI Impact presentation:
-
-Business Context
-In our journey towards AI-driven transformation, we are continually looking for ways to enhance user satisfaction and streamline support processes. In the WxPS environment, understanding real-time customer feedback is essential for improving service quality and reducing time spent on issue resolution. By leveraging AI and NLP, our project aims to provide immediate insights into client experiences, allowing us to address issues before they escalate and to optimize resource allocation. This AI-based approach aligns with our mission to create smarter, more responsive support systems that elevate user experience across all WxPS products.
-
-Problem Statement
-Traditional feedback mechanisms are often reactive and fail to capture real-time client sentiment, making it challenging to take proactive action. The WxPS Customer Satisfaction Weather Report project proposes an AI-driven solution to gather instant product feedback through Symphony pop-ups. Users will provide quick ratings (Happy, Neutral, or Bad) following interactions with WxPS products like WAVE, Teams, M365, Hubs, and W365. If feedback is negative, users can describe the issue, enabling our NLP engine to analyze and suggest relevant knowledge base articles or ServiceNow resolutions. If the issue persists, users have the option to escalate by raising a ticket. This solution will generate actionable insights, enabling us to track satisfaction trends, respond to user needs faster, and make data-driven decisions across WxPS products. This AI-enhanced feedback loop is a step towards intelligent support, optimizing customer interactions and continuously learning from user experiences.
+Opportunity
+This project presents a unique opportunity to harness AI and NLP to elevate our customer support model. Through automated Symphony pop-ups and intelligent issue resolution suggestions, we can transform how user feedback is captured, analyzed, and acted upon. By enabling data-driven insights into product satisfaction, we gain the ability to identify trends, reduce issue resolution time, and increase end-user engagement. This initiative aligns with our AI-driven strategy to enhance product experiences, setting a new standard in proactive, efficient customer support for WxPS products.
 
