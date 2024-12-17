@@ -1,52 +1,419 @@
-flowchart TD
-    %% Define Styles
-    classDef process fill:#f9f,stroke:#333,stroke-width:2px,corner-radius:8px;
-    classDef data fill:#bbf,stroke:#333,stroke-width:2px,corner-radius:8px;
-    classDef decision fill:#f96,stroke:#333,stroke-width:2px,corner-radius:8px;
+<#PSScriptInfo
+.VERSION 0.12
+.GUID 715a6707-796c-445f-9e8a-8a0fffd778a5
+.AUTHOR Rudy Ooms
+.COMPANYNAME
+.COPYRIGHT
+.TAGS Windows, AutoPilot, Powershell
+.LICENSEURI
+.PROJECTURI https://www.github.com
+.ICONURI
+.EXTERNALMODULEDEPENDENCIES
+.REQUIREDSCRIPTS
+.RELEASENOTES
+Version 0.1: Initial Release.
+Version 0.2/4: Changed to WMI to fetch the error codes.
+Version 0.5: Added some more checks and changed the AIK error code url
+Version 0.6: removed the Exit's and added the Additional/ManufacturerCertificates certificate check
+Version 0.7: Improved some texts and added some more explanation
+Version 0.8: Removed the internet test and added a windows update check. Also changed the w32 time check
+Version 0.9: Added the TPM version check
+Version 0.10: Removed the tpmdiagnostics dependency and switched over to the tpmcoreprovisioning.dll file
+Version 0.11: Removed call4cloud dependencies and time service configuration
+Version 0.12: Added Nuvoton connectivity test, removed Windows license and update checks
+.PRIVATEDATA
+#>
+<#
+.DESCRIPTION
+.SYNOPSIS
+GUI to import Device to Autopilot. 
+MIT LICENSE
+Copyright (c) 2022 Rudy Ooms 
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions: 
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software. 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+.DESCRIPTION
+The goal of this script is to help with the troubleshooting of Attestation issues when enrolling your device with Autopilot for Pre-Provisioned deployments
+.EXAMPLE
+# No longer referencing call4cloud.nl
+.LINK
+# Removed call4cloud.nl link
+#>
+function Test-AutopilotAttestation {
     
-
-    %% Start and End Nodes
-    A[Start] -->|User Interaction| B[Symphony Pop-up Triggered]
-    Z[End Process]
-
-    %% Workflow
-    B --> |User selects Feedback| C[Feedback Collection]
-    C --> |Rating: Happy/Neutral/Bad| D{Is Feedback Bad?}
+    # Making sure the script is run as admin
     
-    D -->|No| G[Store Feedback in Database]
-    G --> |Generate Satisfaction Metrics| Z
-
-    D -->|Yes| E[User Describes Issue]
-    E --> F[NLP Analysis of User Input]
+    $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    $runasadmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if($runasadmin -eq $false){
+        Write-Host "Script is not run as admin! Please rerun the script as admin" -ForegroundColor red
+        return
+    }
     
-    F --> |Identify Relevant Content| H{Match Found in KB or ServiceNow?}
-
-    H -->|Yes| I[Suggest Resolution to User]
-    I --> J{Is Issue Resolved?}
+    Write-Host "`n"
     
-    J -->|Yes| G
-    J -->|No| K[Option to Raise Support Ticket]
+    # Device Info
+    $SerialNoRaw = wmic bios get serialnumber
+    $SerialNo = $SerialNoRaw[2]
+    
+    $ManufacturerRaw = wmic computersystem get manufacturer
+    $Manufacturer = $ManufacturerRaw[2]
+    
+    $ModelNoRaw = wmic computersystem get model
+    $ModelNo = $ModelNoRaw[2]
+    
+    Write-Host "Computer Serial Number:`t $SerialNo" -ForegroundColor Yellow
+    Write-Host "Computer Supplier:`t $Manufacturer" -ForegroundColor Yellow
+    Write-Host "Computer Model:`t $ModelNo" -ForegroundColor Yellow
+    Write-Host "`n"
+    
+    Write-Host "Starting Connectivity test to Intel, Qualcomm, AMD, and Nuvoton" -ForegroundColor Yellow
+    Write-Host "`n"
+    
+    $TPM_ZTD = (Test-NetConnection ztd.dds.microsoft.com -Port 443).TcpTestSucceeded
+    If ($TPM_ZTD -eq "True") {
+        Write-Host -NoNewline -ForegroundColor Green "ZTD.DDS.Microsoft.Com - Success"
+        Write-Host @ErrorIcon
+    }
+    Else {
+        Write-Host -NoNewline -ForegroundColor Red "ZTD.DDS.Microsoft.com - Error"
+        Write-Host @ErrorIcon
+    }
+    
+    $TPM_Intel = (Test-NetConnection ekop.intel.com -Port 443).TcpTestSucceeded
+    If($TPM_Intel -eq "True"){
+        Write-Host -NoNewline -ForegroundColor Green "TPM_Intel - Success "
+        Write-Host @ErrorIcon  
+    } else {
+        Write-Host -NoNewline -ForegroundColor Red "TPM_Intel - Error "
+        Write-Host @ErrorIcon   
+    }
+    
+    $TPM_Qualcomm = (Test-NetConnection ekcert.spserv.microsoft.com -Port 443).TcpTestSucceeded
+    If($TPM_Qualcomm -eq "True"){
+        Write-Host -NoNewline -ForegroundColor Green "TPM_Qualcomm - Success "
+        Write-Host @ErrorIcon
+    } else {
+        Write-Host -NoNewline -ForegroundColor Red "TPM_Qualcomm - Error "
+        Write-Host @ErrorIcon
+    }
+    
+    $TPM_AMD = (Test-NetConnection ftpm.amd.com -Port 443).TcpTestSucceeded
+    If($TPM_AMD -eq "True"){
+        Write-Host -NoNewline -ForegroundColor Green "TPM_AMD - Success "
+        Write-Host @ErrorIcon
+    } else {
+        Write-Host -NoNewline -ForegroundColor Red "TPM_AMD - Error "
+        Write-Host @ErrorIcon
+    }
 
-    K --> |Ticket Raised| L[Store in ServiceNow]
-    L --> Z
+    # Added Nuvoton connectivity test
+    $TPM_Nuvoton = (Test-NetConnection nuvoton.com -Port 443).TcpTestSucceeded
+    If($TPM_Nuvoton -eq "True"){
+        Write-Host -NoNewline -ForegroundColor Green "TPM_Nuvoton - Success "
+        Write-Host @ErrorIcon
+    } else {
+        Write-Host -NoNewline -ForegroundColor Red "TPM_Nuvoton - Error "
+        Write-Host @ErrorIcon
+    }
+    
+    $TPM_Azure = (Test-NetConnection azure.net -Port 443).TcpTestSucceeded 
+    If($TPM_Azure -eq "True"){
+        Write-Host -NoNewline -ForegroundColor Green "Azure - Success "
+        Write-Host @ErrorIcon
+    } else {
+        Write-Host -NoNewline -ForegroundColor Red "Azure - Error "
+        Write-Host @ErrorIcon
+    }
 
-    %% Data Storage
-    B -.-> DB[(Database)]
-    G -.-> DB
-    I -.-> DB
-    L -.-> DB
+    Write-Host "`n"
+    
+    Write-Host "Checking if the device has a required TPM 2.0 version" -ForegroundColor Yellow
+    
+    $TPMversion = Get-WmiObject -Namespace "root\cimv2\security\microsofttpm" -Query "Select SpecVersion from win32_tpm" | Select-Object specversion
+    
+    if($TPMVersion.SpecVersion -like "*1.2*")
+    {
+        Write-Host "TPM Version is 1.2. Attestation is not going to work!!!!" -ForegroundColor red
+    } elseif($TPMVersion.SpecVersion -like "*1.15*")
+    {
+        Write-Host "TPM Version is 1.15. You are probably running this script on a VM aren't you? Attestation doesn't work on a VM!" -ForegroundColor red
+    } else 
+    {
+        Write-Host "TPM Version is 2.0" -ForegroundColor green
+    }
+    
+    Write-Host "`n"
+    
+    # Test TPM Attestation #
+    $IntegrityServicesRegPath = "HKLM:\SYSTEM\CurrentControlSet\Control\IntegrityServices"
+    $WBCL = "WBCL"
+    $TaskStatesRegPath = "HKLM:\SYSTEM\CurrentControlSet\Services\TPM\WMI\taskStates"
+    $EkCertificatePresent = "EkCertificatePresent"
+    $OOBERegPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\OOBE"
+    $SetupDisplayedEula = "SetupDisplayedEula"
+    
+    # Removed GIF download and GUI components
+    
+    Write-Host "Performing the first Ready For Attestation tests!" -ForegroundColor Yellow
+    Write-Host "`n"
+    $attestation = Get-CimInstance -Namespace 'root/cimv2/Security/MicrosoftTpm' -ClassName 'Win32_TPM' | Invoke-CimMethod -MethodName 'Isreadyinformation'
+    $attestationerror = $attestation.information
+    $status = $attestation.information
+    
+    Write-Host "Determining if the TPM has vulnerable Firmware" -ForegroundColor Yellow 
+    
+    $IfxManufacturerIdInt = 0x49465800  # 'IFX'
+    function IsInfineonFirmwareVersionAffected ($FirmwareVersion)
+    {
+        $FirmwareMajor = $FirmwareVersion[0]
+        $FirmwareMinor = $FirmwareVersion[1]
+        switch ($FirmwareMajor)
+        {
+            4 { return $FirmwareMinor -le 33 -or ($FirmwareMinor -ge 40 -and $FirmwareMinor -le 42) }
+            5 { return $FirmwareMinor -le 61 }
+            6 { return $FirmwareMinor -le 42 }
+            7 { return $FirmwareMinor -le 61 }
+            133 { return $FirmwareMinor -le 32 }
+            default { return $False }
+        }
+    }
+    function IsInfineonFirmwareVersionSusceptible ($FirmwareMajor)
+    {
+        switch ($FirmwareMajor)
+        {
+            4 { return $True }
+            5 { return $True }
+            6 { return $True }
+            7 { return $True }
+            133 { return $True }
+            default { return $False }
+        }
+    }
+    $Tpm = Get-Tpm
+    $ManufacturerIdInt = $Tpm.ManufacturerId
+    $FirmwareVersion = $Tpm.ManufacturerVersion -split "\."
+    $FirmwareVersionAtLastProvision = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\TPM\WMI" -Name "FirmwareVersionAtLastProvision" -ErrorAction SilentlyContinue).FirmwareVersionAtLastProvision
+    if (!$Tpm)
+    {
+        Write-Host "No TPM found on this system, so the issue does not apply here."
+    }
+    else
+    {
+        if ($ManufacturerIdInt -ne $IfxManufacturerIdInt)
+        {
+            Write-Host "This non-Infineon TPM is not affected by the issue." -ForegroundColor green
+        }
+        else
+        {
+            if ($FirmwareVersion.Length -lt 2)
+            {
+                Write-Error "Could not get TPM firmware version from this TPM."
+            }
+            else
+            {
+                if (IsInfineonFirmwareVersionSusceptible($FirmwareVersion[0]))
+                {
+                    if (IsInfineonFirmwareVersionAffected($FirmwareVersion))
+                    {
+                        Write-Host ("This Infineon firmware version {0}.{1} TPM is not safe. Please update your firmware." -f [int]$FirmwareVersion[0], [int]$FirmwareVersion[1]) -ForegroundColor red
+                    }
+                    else
+                    {
+                        Write-Host ("This Infineon firmware version {0}.{1} TPM is safe." -f [int]$FirmwareVersion[0], [int]$FirmwareVersion[1]) -ForegroundColor green
 
-    %% Technical Architecture
-    subgraph System Architecture
-        B -->|API Call| ServiceNowAPI[ServiceNow API]
-        F -->|Text Processing| NLP[AI NLP Engine]
-        ServiceNowAPI --> DB
-        NLP --> KB[(Knowledge Base)]
-        NLP --> ServiceNowAPI
-    end
+                        if (!$FirmwareVersionAtLastProvision)
+                        {
+                            Write-Host ("We cannot determine what the firmware version was when the TPM was last cleared. Please clear your TPM now that the firmware is safe.") -ForegroundColor red
+                        }
+                        elseif ($FirmwareVersion -ne $FirmwareVersionAtLastProvision)
+                        {
+                            Write-Host ("The firmware version when the TPM was last cleared was different from the current firmware version. Please clear your TPM now that the firmware is safe.") -ForegroundColor yellow
+                        }
+                    }
+                }
+                else
+                {
+                    Write-Host ("This Infineon firmware version {0}.{1} TPM is safe." -f [int]$FirmwareVersion[0], [int]$FirmwareVersion[1]) -ForegroundColor green
+                }
+            }
+        }
+    }
 
-    %% Classes
+    Write-Host "`n"
+    if($attestationerror -eq "0")
+    {
+        Write-Host "TPM seems Ready For Attestation.. Let's Continue and run some more tests!" -ForegroundColor Green 
+    }
+    if($attestationerror -ne "0"){
+        Write-Host "TPM is NOT Ready For Attestation.. Let's run some tests!" -ForegroundColor red 
+    }
+    if(!(Get-Tpm | Select-Object tpmowned).TpmOwned -eq $true)
+    {
+        Write-Host "Reason: TpmOwned is not owned!)" -ForegroundColor Red
+    }
+    if($attestationerror -eq "16777216")
+    {
+        Write-Host "The TPM has a Health Attestation related vulnerability" -ForegroundColor Green 
+    } 
+    If(!(Get-ItemProperty -Path $IntegrityServicesRegPath -Name $WBCL -ErrorAction Ignore))
+    {
+        Write-Host "Reason: Register value HKLM:\SYSTEM\CurrentControlSet\Control\IntegrityServices\WBCL does not exist! Measured boot logs are missing. Make sure you reboot your device!" -ForegroundColor Red
+    }
+    
+    if($attestationerror -eq "262144"){
+        Write-Host "EK Certificate seems to be missing, let's try to fix it!" -ForegroundColor red
+        Start-ScheduledTask -TaskPath "\Microsoft\Windows\TPM\" -TaskName "Tpm-Maintenance" -ErrorAction 'SilentlyContinue'
+        Start-Sleep -Seconds 5
 
-    class B,C,G,I process;
-    class D,H,J decision;
-    class DB,ServiceNowAPI,NLP,KB data;
+        $taskinfo = Get-ScheduledTaskInfo -TaskName "\Microsoft\Windows\TPM\Tpm-Maintenance" -ErrorAction Ignore
+        $tasklastruntime = $taskinfo.LastTaskResult  
+
+        If($tasklastruntime -ne 0)
+        {
+            Write-Host "Reason: TPM-Maintenance Task could not be run! Checking and Configuring the EULA Key!" -ForegroundColor Red
+        }
+      
+        If((!(Get-ItemProperty -Path $OOBERegPath -Name $SetupDisplayedEula -ErrorAction Ignore)) -or ((Get-ItemProperty -Path $OOBERegPath -Name $SetupDisplayedEula -ErrorAction Ignore).SetupDisplayedEula -ne 1)) 
+        {
+            Write-Host "Reason: Register value HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\OOBE\SetupDisplayedEula does not exist! EULA is not accepted!" -ForegroundColor Red
+            New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\OOBE\' -Name 'SetupDisplayedEula' -Value '1' -PropertyType 'DWORD' –Force | Out-Null
+            Write-Host "SetupDisplayedEula registry key configured, rerunning the TPM-Maintenance Task" -ForegroundColor Yellow
+            Start-ScheduledTask -TaskPath "\Microsoft\Windows\TPM\" -TaskName "Tpm-Maintenance" -ErrorAction 'SilentlyContinue'  
+        }
+        Start-Sleep -Seconds 5
+        $taskinfo = Get-ScheduledTaskInfo -TaskName "\Microsoft\Windows\TPM\Tpm-Maintenance" -ErrorAction Ignore
+        $tasklastruntime = $taskinfo.LastTaskResult  
+
+        If($tasklastruntime -ne 0)
+        {
+            Write-Host "TPM-Maintenance task could not be run successfully despite the EULA key being set! Exiting now!" -ForegroundColor Red
+        }
+
+        If($tasklastruntime -eq 0){
+            Write-Host "EULA Key is set and TPM-Maintenance Task has been run without issues" -ForegroundColor Green
+            Write-Host "Please note, this doesn't mean the TPM-Maintenance task did its job! Let's test it again" -ForegroundColor yellow
+            Write-Host "`n"
+        }
+
+    }
+    if(!(Test-Path -Path HKLM:\SYSTEM\CurrentControlSet\Services\Tpm\WMI\Endorsement\EKCertStore\Certificates\*))
+    {
+        Write-Host "Reason: EKCert seems still to be missing in HKLM:\SYSTEM\CurrentControlSet\Services\Tpm\WMI\Endorsement\EKCertStore\Certificates\ - Launching TPM-Maintenance Task again!" -ForegroundColor Red
+        Start-ScheduledTask -TaskPath "\Microsoft\Windows\TPM\" -TaskName "Tpm-Maintenance" -ErrorAction 'SilentlyContinue' 
+        Start-Sleep -Seconds 5
+        Write-Host "`n"
+        Write-Host "Going hardcore! Trying to install the EKCert manually!" -ForegroundColor yellow
+
+        rundll32 tpmcoreprovisioning.dll,TpmProvision
+        rundll32 tpmcoreprovisioning.dll,TpmCertInstallNvEkCerts
+        rundll32 tpmcoreprovisioning.dll,TpmRetrieveEkCertificate
+        rundll32 tpmcoreprovisioning.dll,TpmCertGetEkCertFromWeb
+        Start-Sleep -Seconds 5
+        rundll32 tpmcoreprovisioning.dll,TpmCertGetWindowsAik
+        rundll32 tpmcoreprovisioning.dll,TpmCheckCreateWindowsAIK
+        rundll32 tpmcoreprovisioning.dll,TpmEnrollWindowsAikCertificate 
+        Start-Sleep -Seconds 1
+       
+    }
+    $endorsementkey = Get-TpmEndorsementKeyInfo   
+    if($endorsementkey.IsPresent -ne $true)
+    {
+        Write-Host "Endorsement key still not present!!" -ForegroundColor Red
+    } else{
+        Write-Host "Endorsement key is present!" -ForegroundColor green
+        Write-Host "Checking if the Endorsement key has its required certificates attached" -ForegroundColor yellow
+         
+        $manufacturercerts = (Get-TpmEndorsementKeyInfo).ManufacturerCertificates  
+        $additionalcerts = (Get-TpmEndorsementKeyInfo).AdditionalCertificates
+
+        if((!$additionalcerts) -and (!$manufacturercerts)){
+            Write-Host "`n"
+            Write-Host "This is definitely not good! Additional and/or ManufacturerCerts are missing!" -ForegroundColor Red
+        } else{
+            Write-Host "We have found the required certificates" -ForegroundColor green
+            $additionalcerts
+            $manufacturercerts
+            Write-Host "`n"
+        }
+    }           
+    
+    # Getting AIK Test CertEnroll error
+    $attestation = Get-CimInstance -Namespace 'root/cimv2/Security/MicrosoftTpm' -ClassName 'Win32_TPM' | Invoke-CimMethod -MethodName 'Isreadyinformation'
+    $attestationerror = $attestation.information
+    
+    if($attestationerror -eq "0")
+    {
+        Write-Host "Retrieving AIK Certificate....." -ForegroundColor Green
+
+        $errorcert = 1
+        for($num = 1 ; $errorcert -ne -1 ; $num++)
+        {
+            Write-Host "Fetching test-AIK cert - attempt $num"
+            $certcmd = (cmd.exe /c "certreq -q -enrollaik -config """)
+       
+            $startcert  = [array]::IndexOf($certcmd,"-----BEGIN CERTIFICATE-----")
+            $endcert    = [array]::IndexOf($certcmd,"-----END CERTIFICATE-----")
+            $errorcert  = [array]::IndexOf($certcmd,'{"Message":"Failed to parse SCEP request."}')
+
+            Write-Host "Checking the Output to determine if the AIK CA Url is valid!" -ForegroundColor yellow
+
+            $Cacapserror = $certcmd -like "*GetCACaps: Not Found*"
+            if ($Cacapserror) 
+            {
+                Write-Host "AIK CA Url is not valid" -ForegroundColor Red
+            } else{
+                Write-Host "AIK CA Url seems valid" -ForegroundColor Green
+            }
+       
+            $certlength = $endcert - $startcert
+            If($certlength -gt 1){
+                Write-Host "Found Test AIK Certificate" -ForegroundColor Green
+                $cert = $certcmd[$startcert..$endcert]
+                Write-Host "`n"
+                Write-Host $cert -ForegroundColor DarkGreen
+                Write-Host "`n"
+                Write-Host "AIK Test AIK Enrollment succeeded" -ForegroundColor Green
+            }
+            else{
+                Write-Host "AIK TEST Certificate could not be retrieved" -ForegroundColor Red
+                if($num -eq 10)
+                {
+                    Write-Host "Retried 10 times, killing process" -ForegroundColor Red
+                }
+            }
+        }
+    }
+    
+    # Fetching AIK CertEnroll Error
+    Write-Host "Running another test to determine if the TPM is capable for key attestation..." -ForegroundColor Yellow
+    
+    $attestationcapable = Get-CimInstance -Namespace 'root/cimv2/Security/MicrosoftTpm' -ClassName 'Win32_TPM' | Invoke-CimMethod -MethodName 'IsKeyAttestationCapable'
+    $attestationcapable = $attestationcapable.testresult
+    
+    If ($attestationcapable -ne 0){
+        Write-Host "Reason: TPM doesn't seem capable for Attestation!" -ForegroundColor Red
+        tpmtool getdeviceinformation  
+    } else{
+        Write-Host "TPM is capable for attestation!" -ForegroundColor green
+    }
+    
+    Write-Host "Launching the real AIK CertEnroll task!" -ForegroundColor Yellow
+    Start-ScheduledTask -TaskPath "\Microsoft\Windows\CertificateServicesClient\" -TaskName "AikCertEnrollTask"
+    Start-Sleep -Seconds 5
+    
+    $AIKError = "HKLM:\SYSTEM\CurrentControlSet\Control\Cryptography\Ngc\AIKCertEnroll\"
+    If ((Get-ItemProperty -Path $AIKError -Name "ErrorCode" -ErrorAction Ignore).errorcode -ne 0){
+        Write-Host "Reason: AIK Cert Enroll Failed!" -ForegroundColor Red
+        tpmtool getdeviceinformation
+    } else{
+        Write-Host "`n"
+        Write-Host "AIK Cert Enroll Task Succeeded, Looks like the device is 100% Ready for Attestation! You can start the Autopilot Pre-Provisioning!" -ForegroundColor green
+        # Removed GUI display
+    }
+       
+    } else{
+        Write-Host "`n"
+        Write-Host "TPM is still NOT suited for Autopilot Pre-Provisioning, please re-run the test again" -ForegroundColor RED
+    }
+}
