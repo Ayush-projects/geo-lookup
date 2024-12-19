@@ -1,202 +1,385 @@
-<#
-.SYNOPSIS
-    Retrieves ownership properties from Intune for Azure IDs listed in an Excel file.
-
-.DESCRIPTION
-    This script performs the following actions:
-    1. Checks if the Microsoft.Graph and ImportExcel modules are installed. If not, installs them.
-    2. Lists all .xlsx files in the current directory and prompts the user to select one.
-    3. Reads the selected Excel file and extracts all values from the "Azure ID" column.
-    4. For each Azure ID, retrieves the ownership property from Intune via Microsoft Graph.
-    5. Logs all actions and outputs to both a log file and the console with colored messages.
-
-.NOTES
-    - Requires PowerShell 5.1 or later.
-    - Ensure you have the necessary permissions to access Intune data via Microsoft Graph.
-    - The script handles interactive login, supporting multi-factor authentication (MFA).
+<#PSScriptInfo
+.VERSION 0.13
+.GUID 715a6707-796c-445f-9e8a-8a0fffd778a5
+.AUTHOR Rudy Ooms
+.COMPANYNAME
+.COPYRIGHT
+.TAGS Windows, AutoPilot, Powershell
+.LICENSEURI
+.PROJECTURI https://www.github.com
+.ICONURI
+.EXTERNALMODULEDEPENDENCIES
+.REQUIREDSCRIPTS
+.RELEASENOTES
+Version 0.1: Initial Release.
+Version 0.2/4: Changed to WMI to fetch the error codes.
+Version 0.5: Added some more checks and changed the AIK error code url
+Version 0.6: removed the Exit's and added the Additional/ManufacturerCertificates certificate check
+Version 0.7: Improved some texts and added some more explanation
+Version 0.8: Removed the internet test and added a windows update check. Also changed the w32 time check
+Version 0.9: Added the TPM version check
+Version 0.10: Removed the tpmdiagnostics dependency and switched over to the tpmcoreprovisioning.dll file
+Version 0.11: Removed call4cloud dependencies and time service configuration
+Version 0.12: Added Nuvoton connectivity test, removed Windows license and update checks
+Version 0.13: Removed icon variables and their usages
+.PRIVATEDATA
 #>
-
-# Define log file path
-$logFile = Join-Path -Path (Get-Location) -ChildPath "script.log"
-
-# Function to log messages to file and host with colors
-function Write-Log {
-    param (
-        [Parameter(Mandatory)]
-        [string]$Message,
-
-        [Parameter(Mandatory)]
-        [ValidateSet("INFO", "SUCCESS", "ERROR", "WARN")]
-        [string]$Level
-    )
-
-    # Prepend timestamp
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logMessage = "$timestamp [$Level] $Message"
-
-    # Write to log file
-    try {
-        Add-Content -Path $logFile -Value $logMessage -ErrorAction Stop
+<#
+.DESCRIPTION
+.SYNOPSIS
+Script to troubleshoot TPM Attestation issues when enrolling devices with Autopilot for Pre-Provisioned deployments.
+MIT LICENSE
+Copyright (c) 2022 Rudy Ooms 
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files...
+#>
+function Test-AutopilotAttestation {
+    
+    # Making sure the script is run as admin
+    $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    $runasadmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if ($runasadmin -eq $false) {
+        Write-Host "Script is not run as admin! Please rerun the script as admin" -ForegroundColor Red
+        return
     }
-    catch {
-        Write-Host "Failed to write to log file. Error: $_" -ForegroundColor Red
-    }
-
-    # Define colors based on level
-    switch ($Level) {
-        "INFO"    { $color = "Cyan" }
-        "SUCCESS" { $color = "Green" }
-        "ERROR"   { $color = "Red" }
-        "WARN"    { $color = "Yellow" }
-        default   { $color = "White" }
-    }
-
-    # Write to host with color
-    Write-Host $logMessage -ForegroundColor $color
-}
-
-# Function to check and install a module if not present
-function Ensure-Module {
-    param (
-        [Parameter(Mandatory)]
-        [string]$ModuleName
-    )
-
-    if (-not (Get-Module -ListAvailable -Name $ModuleName)) {
-        Write-Log -Message "Module '$ModuleName' not found. Installing..." -Level "WARN"
-        try {
-            Install-Module -Name $ModuleName -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
-            Write-Log -Message "Module '$ModuleName' installed successfully." -Level "SUCCESS"
-        }
-        catch {
-            Write-Log -Message "Failed to install module '$ModuleName'. Error: $_" -Level "ERROR"
-            exit 1
-        }
-    }
-    else {
-        Write-Log -Message "Module '$ModuleName' is already installed." -Level "INFO"
-    }
-
-    # Import the module
-    try {
-        Import-Module $ModuleName -Global -ErrorAction Stop
-        Write-Log -Message "Module '$ModuleName' imported successfully." -Level "SUCCESS"
-    }
-    catch {
-        Write-Log -Message "Failed to import module '$ModuleName'. Error: $_" -Level "ERROR"
-        exit 1
-    }
-}
-
-# Start logging
-Write-Log -Message "Script execution started." -Level "INFO"
-
-# Ensure required modules are installed and imported
-Ensure-Module -ModuleName "Microsoft.Graph"
-Ensure-Module -ModuleName "ImportExcel"
-
-# Connect to Microsoft Graph with interactive login (supports MFA)
-Write-Log -Message "Connecting to Microsoft Graph..." -Level "INFO"
-try {
-    Connect-MgGraph -Scopes "DeviceManagementManagedDevices.Read.All" -ErrorAction Stop
-    Write-Log -Message "Successfully connected to Microsoft Graph." -Level "SUCCESS"
-}
-catch {
-    Write-Log -Message "Failed to connect to Microsoft Graph. Error: $_" -Level "ERROR"
-    exit 1
-}
-
-# Verify connection
-try {
-    $user = Get-MgUser -UserId "me" -ErrorAction Stop
-    Write-Log -Message "Authenticated as $($user.DisplayName) ($($user.UserPrincipalName))." -Level "INFO"
-}
-catch {
-    Write-Log -Message "Failed to retrieve user information. Error: $_" -Level "ERROR"
-    exit 1
-}
-
-# List all .xlsx files in the current directory
-Write-Log -Message "Scanning for .xlsx files in the current directory..." -Level "INFO"
-$excelFiles = Get-ChildItem -Path . -Filter *.xlsx -File
-
-if ($excelFiles.Count -eq 0) {
-    Write-Log -Message "No .xlsx files found in the current directory." -Level "ERROR"
-    exit 1
-}
-elseif ($excelFiles.Count -eq 1) {
-    $selectedFile = $excelFiles[0].FullName
-    Write-Log -Message "Only one .xlsx file found: '$($excelFiles[0].Name)'. Selecting it automatically." -Level "INFO"
-}
-else {
-    Write-Log -Message "Multiple .xlsx files found:" -Level "INFO"
-    for ($i = 0; $i -lt $excelFiles.Count; $i++) {
-        Write-Host "[$($i + 1)] $($excelFiles[$i].Name)" -ForegroundColor Yellow
-    }
-
-    # Prompt user to select a file
-    $selection = Read-Host "Enter the number corresponding to the file you want to select"
-
-    # Validate input
-    if (-not ($selection -match '^\d+$') -or [int]$selection -lt 1 -or [int]$selection -gt $excelFiles.Count) {
-        Write-Log -Message "Invalid selection. Please run the script again and enter a valid number." -Level "ERROR"
-        exit 1
-    }
-
-    $selectedFile = $excelFiles[[int]$selection - 1].FullName
-    Write-Log -Message "Selected file: '$($excelFiles[[int]$selection - 1].Name)'." -Level "INFO"
-}
-
-# Read the selected Excel file and extract 'Azure ID' column
-Write-Log -Message "Reading Excel file: '$selectedFile'." -Level "INFO"
-try {
-    $excelData = Import-Excel -Path $selectedFile -ErrorAction Stop
-    Write-Log -Message "Excel file read successfully." -Level "SUCCESS"
-}
-catch {
-    Write-Log -Message "Failed to read Excel file. Ensure the file is not open and has a valid format. Error: $_" -Level "ERROR"
-    exit 1
-}
-
-# Check if 'Azure ID' column exists
-if (-not ($excelData | Get-Member -Name "Azure ID")) {
-    Write-Log -Message "The Excel file does not contain an 'Azure ID' column. Please verify the column name." -Level "ERROR"
-    exit 1
-}
-
-# Extract Azure IDs, removing duplicates and empty entries
-$azureIDs = $excelData."Azure ID" | Where-Object { $_ -ne $null -and $_.ToString().Trim() -ne "" } | Select-Object -Unique
-
-if ($azureIDs.Count -eq 0) {
-    Write-Log -Message "No valid 'Azure ID' entries found in the Excel file." -Level "ERROR"
-    exit 1
-}
-
-Write-Log -Message "Found $($azureIDs.Count) unique Azure ID(s) to process." -Level "INFO"
-
-# Iterate over each Azure ID and retrieve ownership from Intune
-foreach ($id in $azureIDs) {
-    Write-Log -Message "Processing Azure ID: '$id'." -Level "INFO"
-
-    try {
-        # Retrieve managed device information
-        $device = Get-MgDeviceManagementManagedDevice -ManagedDeviceId $id -ErrorAction Stop
-
-        # Extract ownership property
-        $ownership = $device.Ownership
-
-        # Output ownership information
-        Write-Log -Message "Azure ID '$id' Ownership: '$ownership'." -Level "SUCCESS"
-    }
-    catch {
-        # Handle specific errors, e.g., not found
-        if ($_.Exception.Message -like "*not found*") {
-            Write-Log -Message "Azure ID '$id' not found in Intune." -Level "WARN"
+    
+    Write-Host "`n"
+    
+    # Device Info
+    $SerialNoRaw = wmic bios get serialnumber
+    $SerialNo = $SerialNoRaw | Select-Object -Skip 1 | Where-Object { $_.Trim() -ne "" } | Select-Object -First 1
+    
+    $ManufacturerRaw = wmic computersystem get manufacturer
+    $Manufacturer = $ManufacturerRaw | Select-Object -Skip 1 | Where-Object { $_.Trim() -ne "" } | Select-Object -First 1
+    
+    $ModelNoRaw = wmic computersystem get model
+    $ModelNo = $ModelNoRaw | Select-Object -Skip 1 | Where-Object { $_.Trim() -ne "" } | Select-Object -First 1
+    
+    Write-Host "Computer Serial Number:`t $SerialNo" -ForegroundColor Yellow
+    Write-Host "Computer Supplier:`t $Manufacturer" -ForegroundColor Yellow
+    Write-Host "Computer Model:`t $ModelNo" -ForegroundColor Yellow
+    Write-Host "`n"
+    
+    Write-Host "Starting Connectivity test to Intel, Qualcomm, AMD, and Nuvoton" -ForegroundColor Yellow
+    Write-Host "`n"
+    
+    # Define a helper function for connectivity test
+    function Test-Connectivity {
+        param(
+            [string]$HostName,
+            [int]$Port
+        )
+        $result = Test-NetConnection -ComputerName $HostName -Port $Port -InformationLevel Quiet
+        if ($result) {
+            Write-Host "$Host - Success" -ForegroundColor Green
         }
         else {
-            Write-Log -Message "Failed to retrieve ownership for Azure ID '$id'. Error: $_" -Level "ERROR"
+            Write-Host "$Host - Error" -ForegroundColor Red
         }
+    }
+    
+    # Connectivity Tests
+    Test-Connectivity -HostName "ztd.dds.microsoft.com" -Port 443
+    Test-Connectivity -HostName "ekop.intel.com" -Port 443
+    Test-Connectivity -HostName "ekcert.spserv.microsoft.com" -Port 443
+    Test-Connectivity -HostName "ftpm.amd.com" -Port 443
+    Test-Connectivity -HostName "azure.net" -Port 443
+    
+    Write-Host "`n"
+    
+    Write-Host "Checking if the device has a required TPM 2.0 version" -ForegroundColor Yellow
+    
+    $TPMversion = Get-WmiObject -Namespace "root\cimv2\security\microsofttpm" -Query "SELECT SpecVersion FROM Win32_TPM" | Select-Object -ExpandProperty SpecVersion
+    
+    if ($TPMversion -like "*1.2*") {
+        Write-Host "TPM Version is 1.2. Attestation is not going to work!!!!" -ForegroundColor Red
+    }
+    elseif ($TPMversion -like "*1.15*") {
+        Write-Host "TPM Version is 1.15. You are probably running this script on a VM aren't you? Attestation doesn't work on a VM!" -ForegroundColor Red
+    }
+    else {
+        Write-Host "TPM Version is 2.0" -ForegroundColor Green
+    }
+    
+    Write-Host "`n"
+    
+    # Test TPM Attestation
+    $IntegrityServicesRegPath = "HKLM:\SYSTEM\CurrentControlSet\Control\IntegrityServices"
+    $WBCL = "WBCL"
+    $TaskStatesRegPath = "HKLM:\SYSTEM\CurrentControlSet\Services\TPM\WMI\taskStates"
+    $EkCertificatePresent = "EkCertificatePresent"
+    $OOBERegPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\OOBE"
+    $SetupDisplayedEula = "SetupDisplayedEula"
+    
+    Write-Host "Performing the first Ready For Attestation tests!" -ForegroundColor Yellow
+    Write-Host "`n"
+    
+    $attestation = Get-CimInstance -Namespace 'root/cimv2/Security/MicrosoftTpm' -ClassName 'Win32_TPM' | Invoke-CimMethod -MethodName 'Isreadyinformation'
+    $attestationerror = $attestation.information
+    
+    Write-Host "Determining if the TPM has vulnerable Firmware" -ForegroundColor Yellow 
+    
+    $IfxManufacturerIdInt = 0x49465800  # 'IFX'
+    function IsInfineonFirmwareVersionAffected ($FirmwareVersion) {
+        $FirmwareMajor = [int]$FirmwareVersion[0]
+        $FirmwareMinor = [int]$FirmwareVersion[1]
+        switch ($FirmwareMajor) {
+            4 { return ($FirmwareMinor -le 33) -or (($FirmwareMinor -ge 40) -and ($FirmwareMinor -le 42)) }
+            5 { return ($FirmwareMinor -le 61) }
+            6 { return ($FirmwareMinor -le 42) }
+            7 { return ($FirmwareMinor -le 61) }
+            133 { return ($FirmwareMinor -le 32) }
+            default { return $False }
+        }
+    }
+    function IsInfineonFirmwareVersionSusceptible ($FirmwareMajor) {
+        switch ($FirmwareMajor) {
+            4 { return $True }
+            5 { return $True }
+            6 { return $True }
+            7 { return $True }
+            133 { return $True }
+            default { return $False }
+        }
+    }
+    
+    $Tpm = Get-Tpm
+    if (!$Tpm) {
+        Write-Host "No TPM found on this system, so the issue does not apply here." -ForegroundColor Yellow
+    }
+    else {
+        $ManufacturerIdInt = $Tpm.ManufacturerId
+        $FirmwareVersion = $Tpm.ManufacturerVersion -split "\."
+        $FirmwareVersionAtLastProvision = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\TPM\WMI" -Name "FirmwareVersionAtLastProvision" -ErrorAction SilentlyContinue).FirmwareVersionAtLastProvision
+        
+        if ($ManufacturerIdInt -ne $IfxManufacturerIdInt) {
+            Write-Host "This non-Infineon TPM is not affected by the issue." -ForegroundColor Green
+        }
+        else {
+            if ($FirmwareVersion.Length -lt 2) {
+                Write-Error "Could not get TPM firmware version from this TPM."
+            }
+            else {
+                $FirmwareMajor = [int]$FirmwareVersion[0]
+                $FirmwareMinor = [int]$FirmwareVersion[1]
+                if (IsInfineonFirmwareVersionSusceptible($FirmwareMajor)) {
+                    if (IsInfineonFirmwareVersionAffected($FirmwareVersion)) {
+                        Write-Host ("This Infineon firmware version {0}.{1} TPM is not safe. Please update your firmware." -f $FirmwareMajor, $FirmwareMinor) -ForegroundColor Red
+                    }
+                    else {
+                        Write-Host ("This Infineon firmware version {0}.{1} TPM is safe." -f $FirmwareMajor, $FirmwareMinor) -ForegroundColor Green
+
+                        if (!$FirmwareVersionAtLastProvision) {
+                            Write-Host "We cannot determine what the firmware version was when the TPM was last cleared. Please clear your TPM now that the firmware is safe." -ForegroundColor Red
+                        }
+                        elseif (($FirmwareVersion[0] + "." + $FirmwareVersion[1]) -ne $FirmwareVersionAtLastProvision) {
+                            Write-Host "The firmware version when the TPM was last cleared was different from the current firmware version. Please clear your TPM now that the firmware is safe." -ForegroundColor Yellow
+                        }
+                    }
+                }
+                else {
+                    Write-Host ("This Infineon firmware version {0}.{1} TPM is safe." -f $FirmwareMajor, $FirmwareMinor) -ForegroundColor Green
+                }
+            }
+        }
+    }
+
+    Write-Host "`n"
+    
+    if ($attestationerror -eq "0") {
+        Write-Host "TPM seems Ready For Attestation.. Let's Continue and run some more tests!" -ForegroundColor Green 
+    }
+    elseif ($attestationerror -ne "0") {
+        Write-Host "TPM is NOT Ready For Attestation.. Let's run some tests!" -ForegroundColor Red 
+    }
+    
+    if (!(Get-Tpm | Select-Object -ExpandProperty TpmOwned)) {
+        Write-Host "Reason: TpmOwned is not owned!" -ForegroundColor Red
+    }
+    
+    if ($attestationerror -eq "16777216") {
+        Write-Host "The TPM has a Health Attestation related vulnerability" -ForegroundColor Green 
+    } 
+    
+    if (!(Get-ItemProperty -Path $IntegrityServicesRegPath -Name $WBCL -ErrorAction SilentlyContinue)) {
+        Write-Host "Reason: Register value HKLM:\SYSTEM\CurrentControlSet\Control\IntegrityServices\WBCL does not exist! Measured boot logs are missing. Make sure you reboot your device!" -ForegroundColor Red
+    }
+    
+    if ($attestationerror -eq "262144") {
+        Write-Host "EK Certificate seems to be missing, let's try to fix it!" -ForegroundColor Red
+        Start-ScheduledTask -TaskPath "\Microsoft\Windows\TPM\" -TaskName "Tpm-Maintenance" -ErrorAction 'SilentlyContinue'
+        Start-Sleep -Seconds 5
+
+        $taskinfo = Get-ScheduledTaskInfo -TaskName "\Microsoft\Windows\TPM\Tpm-Maintenance" -ErrorAction SilentlyContinue
+        $tasklastruntime = $taskinfo.LastTaskResult  
+
+        if ($tasklastruntime -ne 0) {
+            Write-Host "Reason: TPM-Maintenance Task could not be run! Checking and Configuring the EULA Key!" -ForegroundColor Red
+        }
+      
+        if ((!(Get-ItemProperty -Path $OOBERegPath -Name $SetupDisplayedEula -ErrorAction SilentlyContinue)) -or 
+            ((Get-ItemProperty -Path $OOBERegPath -Name $SetupDisplayedEula -ErrorAction SilentlyContinue).SetupDisplayedEula -ne 1)) 
+        {
+            Write-Host "Reason: Register value HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\OOBE\SetupDisplayedEula does not exist! EULA is not accepted!" -ForegroundColor Red
+            New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\OOBE\' `
+                            -Name 'SetupDisplayedEula' `
+                            -Value '1' `
+                            -PropertyType 'DWORD' `
+                            -Force | Out-Null
+            Write-Host "SetupDisplayedEula registry key configured, rerunning the TPM-Maintenance Task" -ForegroundColor Yellow
+            Start-ScheduledTask -TaskPath "\Microsoft\Windows\TPM\" -TaskName "Tpm-Maintenance" -ErrorAction 'SilentlyContinue'  
+        }
+        Start-Sleep -Seconds 5
+        $taskinfo = Get-ScheduledTaskInfo -TaskName "\Microsoft\Windows\TPM\Tpm-Maintenance" -ErrorAction SilentlyContinue
+        $tasklastruntime = $taskinfo.LastTaskResult  
+
+        if ($tasklastruntime -ne 0) {
+            Write-Host "TPM-Maintenance task could not be run successfully despite the EULA key being set! Exiting now!" -ForegroundColor Red
+        }
+
+        if ($tasklastruntime -eq 0) {
+            Write-Host "EULA Key is set and TPM-Maintenance Task has been run without issues" -ForegroundColor Green
+            Write-Host "Please note, this doesn't mean the TPM-Maintenance task did its job! Let's test it again" -ForegroundColor Yellow
+            Write-Host "`n"
+        }
+    }
+    
+    if (!(Test-Path -Path "HKLM:\SYSTEM\CurrentControlSet\Services\Tpm\WMI\Endorsement\EKCertStore\Certificates\*")) {
+        Write-Host "Reason: EKCert seems still to be missing in HKLM:\SYSTEM\CurrentControlSet\Services\Tpm\WMI\Endorsement\EKCertStore\Certificates\ - Launching TPM-Maintenance Task again!" -ForegroundColor Red
+        Start-ScheduledTask -TaskPath "\Microsoft\Windows\TPM\" -TaskName "Tpm-Maintenance" -ErrorAction 'SilentlyContinue' 
+        Start-Sleep -Seconds 5
+        Write-Host "`n"
+        Write-Host "Attempting to install EKCert manually." -ForegroundColor Yellow
+
+        rundll32 tpmcoreprovisioning.dll,TpmProvision
+        rundll32 tpmcoreprovisioning.dll,TpmCertInstallNvEkCerts
+        rundll32 tpmcoreprovisioning.dll,TpmRetrieveEkCertificate
+        rundll32 tpmcoreprovisioning.dll,TpmCertGetEkCertFromWeb
+        Start-Sleep -Seconds 5
+        rundll32 tpmcoreprovisioning.dll,TpmCertGetWindowsAik
+        rundll32 tpmcoreprovisioning.dll,TpmCheckCreateWindowsAIK
+        rundll32 tpmcoreprovisioning.dll,TpmEnrollWindowsAikCertificate 
+        Start-Sleep -Seconds 1
+    }
+    
+    $endorsementkey = Get-TpmEndorsementKeyInfo   
+    if ($endorsementkey.IsPresent -ne $true) {
+        Write-Host "Endorsement key still not present!!" -ForegroundColor Red
+    } 
+    else {
+        Write-Host "Endorsement key is present!" -ForegroundColor Green
+        Write-Host "Checking if the Endorsement key has its required certificates attached" -ForegroundColor Yellow
+         
+        $manufacturercerts = $endorsementkey.ManufacturerCertificates
+        $additionalcerts = $endorsementkey.AdditionalCertificates
+
+        if ((!$additionalcerts) -and (!$manufacturercerts)) {
+            Write-Host "`n"
+            Write-Host "This is definitely not good! Additional and/or ManufacturerCerts are missing!" -ForegroundColor Red
+        } 
+        else {
+            Write-Host "We have found the required certificates" -ForegroundColor Green
+            $additionalcerts | ForEach-Object { Write-Host $_ }
+            $manufacturercerts | ForEach-Object { Write-Host $_ }
+            Write-Host "`n"
+        }
+    }           
+    
+    # Getting AIK Test CertEnroll error
+    $attestation = Get-CimInstance -Namespace 'root/cimv2/Security/MicrosoftTpm' -ClassName 'Win32_TPM' | Invoke-CimMethod -MethodName 'Isreadyinformation'
+    $attestationerror = $attestation.information
+    
+    if ($attestationerror -eq "0") {
+        Write-Host "Retrieving AIK Certificate....." -ForegroundColor Green
+
+        $errorcert = 1
+        for ($num = 1; $errorcert -ne -1; $num++) {
+            Write-Host "Fetching test-AIK cert - attempt $num"
+            $certcmd = cmd.exe /c "certreq -q -enrollaik"
+
+            # Capture output
+            $certOutput = $certcmd 2>&1
+
+            $startcert  = [array]::IndexOf($certOutput, "-----BEGIN CERTIFICATE-----")
+            $endcert    = [array]::IndexOf($certOutput, "-----END CERTIFICATE-----")
+            $errorcert  = [array]::IndexOf($certOutput, '{"Message":"Failed to parse SCEP request."}')
+
+            Write-Host "Checking the Output to determine if the AIK CA Url is valid!" -ForegroundColor Yellow
+
+            $Cacapserror = $certOutput -like "*GetCACaps: Not Found*"
+            if ($Cacapserror) {
+                Write-Host "AIK CA Url is not valid" -ForegroundColor Red
+            } 
+            else {
+                Write-Host "AIK CA Url seems valid" -ForegroundColor Green
+            }
+       
+            if (($startcert -ne -1) -and ($endcert -ne -1)) {
+                $certlength = $endcert - $startcert
+                if ($certlength -gt 1) {
+                    $cert = $certOutput[$startcert..$endcert] -join "`n"
+                    Write-Host "Found Test AIK Certificate" -ForegroundColor Green
+                    Write-Host "`n"
+                    Write-Host $cert -ForegroundColor DarkGreen
+                    Write-Host "`n"
+                    Write-Host "AIK Test AIK Enrollment succeeded" -ForegroundColor Green
+                    break
+                }
+                else {
+                    Write-Host "AIK TEST Certificate could not be retrieved" -ForegroundColor Red
+                    if ($num -ge 10) {
+                        Write-Host "Retried 10 times, stopping attempts." -ForegroundColor Red
+                        break
+                    }
+                }
+            }
+            else {
+                Write-Host "AIK TEST Certificate could not be retrieved" -ForegroundColor Red
+                if ($num -ge 10) {
+                    Write-Host "Retried 10 times, stopping attempts." -ForegroundColor Red
+                    break
+                }
+            }
+        }
+    }
+    
+    # Fetching AIK CertEnroll Error
+    Write-Host "Running another test to determine if the TPM is capable for key attestation..." -ForegroundColor Yellow
+    
+    $attestationcapable = Get-CimInstance -Namespace 'root/cimv2/Security/MicrosoftTpm' -ClassName 'Win32_TPM' | Invoke-CimMethod -MethodName 'IsKeyAttestationCapable'
+    $attestationcapable = $attestationcapable.testresult
+    
+    if ($attestationcapable -ne 0) {
+        Write-Host "Reason: TPM doesn't seem capable for Attestation!" -ForegroundColor Red
+        tpmtool getdeviceinformation  
+    }
+    else {
+        Write-Host "TPM is capable for attestation!" -ForegroundColor Green
+    }
+    
+    Write-Host "Launching the real AIK CertEnroll task!" -ForegroundColor Yellow
+    Start-ScheduledTask -TaskPath "\Microsoft\Windows\CertificateServicesClient\" -TaskName "AikCertEnrollTask"
+    Start-Sleep -Seconds 5
+    
+    $AIKErrorPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Cryptography\Ngc\AIKCertEnroll\"
+    $AIKErrorCode = (Get-ItemProperty -Path $AIKErrorPath -Name "ErrorCode" -ErrorAction SilentlyContinue).ErrorCode
+    if ($AIKErrorCode -ne 0) {
+        Write-Host "Reason: AIK Cert Enroll Failed!" -ForegroundColor Red
+        tpmtool getdeviceinformation
+    }
+    else {
+        Write-Host "`n"
+        Write-Host "AIK Cert Enroll Task Succeeded, Looks like the device is 100% Ready for Attestation! You can start the Autopilot Pre-Provisioning!" -ForegroundColor Green
+        # Removed GUI display
+    }
+    
+    Write-Host "`n"
+    if ($attestationerror -eq "0") {
+        # Success message already shown above
+    }
+    else {
+        Write-Host "TPM is still NOT suited for Autopilot Pre-Provisioning, please re-run the test again" -ForegroundColor Red
     }
 }
 
-Write-Log -Message "Script execution completed." -Level "INFO"
+
+Test-AutopilotAttestation
