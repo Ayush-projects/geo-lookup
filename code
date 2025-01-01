@@ -65,22 +65,50 @@ function Install-RequiredModules {
 }
 
 function Select-ExcelFile {
-    $excelFiles = Get-ChildItem -Path . -Filter *.xlsx, *.xls -File
-    if ($excelFiles.Count -eq 0) {
-        Write-Log -Message "No Excel files found in the current directory." -Level "ERROR"
-        throw "No Excel files to process. Exiting script."
+    # Use Out-GridView only if the host supports it
+    if ($Host.UI.SupportsVirtualTerminal) {
+        $excelFiles = Get-ChildItem -Path . -Include *.xlsx, *.xls -File
+        if ($excelFiles.Count -eq 0) {
+            Write-Log -Message "No Excel files found in the current directory." -Level "ERROR"
+            throw "No Excel files to process. Exiting script."
+        }
+
+        Write-Log -Message "Listing Excel files for selection..." -Level "INFO"
+        $selectedFile = $excelFiles | Out-GridView -Title "Select an Excel File" -PassThru
+
+        if (-not $selectedFile) {
+            Write-Log -Message "No file selected by the user." -Level "WARN"
+            throw "No file selected. Exiting script."
+        }
+
+        Write-Log -Message "User selected file: $($selectedFile.Name)" -Level "INFO"
+        return $selectedFile.FullName
     }
+    else {
+        # Fallback to console selection
+        $excelFiles = Get-ChildItem -Path . -Include *.xlsx, *.xls -File
+        if ($excelFiles.Count -eq 0) {
+            Write-Log -Message "No Excel files found in the current directory." -Level "ERROR"
+            throw "No Excel files to process. Exiting script."
+        }
 
-    Write-Log -Message "Listing Excel files for selection..." -Level "INFO"
-    $selectedFile = $excelFiles | Out-GridView -Title "Select an Excel File" -PassThru
+        Write-Log -Message "Listing Excel files for selection..." -Level "INFO"
+        Write-Output "Please select an Excel file from the list below by entering the corresponding number:"
+        for ($i = 0; $i -lt $excelFiles.Count; $i++) {
+            Write-Output "$($i + 1): $($excelFiles[$i].Name)"
+        }
 
-    if (-not $selectedFile) {
-        Write-Log -Message "No file selected by the user." -Level "WARN"
-        throw "No file selected. Exiting script."
+        $selection = Read-Host "Enter the number of the Excel file to select"
+
+        if (-not ([int]::TryParse($selection, [ref]$null)) -or $selection -lt 1 -or $selection -gt $excelFiles.Count) {
+            Write-Log -Message "Invalid selection made by the user." -Level "WARN"
+            throw "Invalid file selection. Exiting script."
+        }
+
+        $selectedFile = $excelFiles[$selection - 1]
+        Write-Log -Message "User selected file: $($selectedFile.Name)" -Level "INFO"
+        return $selectedFile.FullName
     }
-
-    Write-Log -Message "User selected file: $($selectedFile.Name)" -Level "INFO"
-    return $selectedFile.FullName
 }
 
 function Connect-ToGraph {
@@ -102,15 +130,12 @@ function Get-DeviceByAzureID {
     )
 
     try {
-        # Attempt to retrieve the device by ID
-        $device = Get-MgDevice -DeviceId $AzureID -Property "*" -ErrorAction SilentlyContinue
+        # Retrieve the device using the Device ID
+        $device = Get-MgDevice -DeviceId $AzureID -Select "*" -ErrorAction SilentlyContinue
 
         if (-not $device) {
-            # If not found, try to search in registered devices
-            $registeredDevices = Get-MgDeviceRegisteredUser -DeviceId $AzureID -ErrorAction SilentlyContinue
-            if ($registeredDevices) {
-                $device = $registeredDevices
-            }
+            Write-Log -Message "Device with Azure ID '$AzureID' not found using Get-MgDevice." -Level "WARN"
+            return $null
         }
 
         return $device
@@ -166,7 +191,7 @@ try {
         if ($device) {
             Write-Log -Message "Device found for Azure ID '$id'. Retrieving attributes..." -Level "INFO"
             # Convert device object to a readable string
-            $deviceProperties = $device | Select-Object -Property * | Out-String
+            $deviceProperties = $device | Format-List | Out-String
             Write-Log -Message "Attributes for Azure ID '$id':`n$deviceProperties" -Level "INFO"
 
             # Optionally, you can also print to console
@@ -186,9 +211,15 @@ catch {
     Write-Error "An error occurred: $_"
 }
 finally {
-    # Optionally, disconnect from Microsoft Graph
-    if (Get-MgProfile -ErrorAction SilentlyContinue) {
-        Disconnect-MgGraph
-        Write-Log -Message "Disconnected from Microsoft Graph." -Level "INFO"
+    # Disconnect from Microsoft Graph if connected
+    try {
+        $graphContext = Get-MgContext -ErrorAction SilentlyContinue
+        if ($graphContext) {
+            Disconnect-MgGraph -Confirm:$false
+            Write-Log -Message "Disconnected from Microsoft Graph." -Level "INFO"
+        }
+    }
+    catch {
+        Write-Log -Message "Error while disconnecting from Microsoft Graph: $_" -Level "ERROR"
     }
 }
