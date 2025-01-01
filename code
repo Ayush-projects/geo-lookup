@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     This script performs the following actions:
-    1. Checks for the presence of Microsoft.Graph and ImportExcel modules. Installs them if not present.
+    1. Checks for the presence of Microsoft.Graph and ImportExcel modules. Installs them if not present using the ArtifactoryExt repository.
     2. Creates a log file in the current directory with a timestamped filename.
     3. Lists all Excel files in the current directory and prompts the user to select one.
     4. Reads the selected Excel file and extracts Azure IDs from the 'Azure ID' column.
@@ -22,11 +22,11 @@
 $requiredModules = @('Microsoft.Graph', 'ImportExcel')
 
 # Define the repository to install modules from
-$repository = 'PSGallery'
+$repository = 'ArtifactoryExt'
 
 # Define the log file name with current date and time
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$logFile = Join-Path -Path (Get-Location) -ChildPath "ScriptLog_$timestamp.txt"
+$logFile = Join-Path (Get-Location) -ChildPath "ScriptLog_$timestamp.txt"
 
 # --------------------------- Functions ---------------------------
 
@@ -35,8 +35,8 @@ function Write-Log {
     param (
         [Parameter(Mandatory=$true)]
         [string]$Message,
-
-        [ValidateSet("INFO","ERROR","WARN","DEBUG")]
+        
+        [ValidateSet("INFO", "ERROR", "WARN", "DEBUG")]
         [string]$Level = "INFO"
     )
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -46,15 +46,34 @@ function Write-Log {
 }
 
 function Install-RequiredModules {
+    # Check if the ArtifactoryExt repository is registered
+    $artifactory = Get-PSRepository "ArtifactoryExt" -ErrorAction SilentlyContinue
+
+    if (!$artifactory) {
+        Write-Log -Message "ArtifactoryExt repository not found. Attempting to add..." -Level "INFO"
+        try {
+            Register-PSRepository -Name ArtifactoryExt -SourceLocation "http://artifactory-prxy-a.wellsfargo.net/artifactory/api/nuget/powershell-gallery" -InstallationPolicy Trusted -ErrorAction Stop
+            Write-Log -Message "ArtifactoryExt repository added successfully." -Level "INFO"
+        }
+        catch {
+            Write-Log -Message "Failed to add ArtifactoryExt repository. Error: $_" -Level "ERROR"
+            throw "Repository registration failed. Exiting script."
+        }
+    }
+    else {
+        Write-Log -Message "ArtifactoryExt repository is already registered." -Level "INFO"
+    }
+
+    # Install required modules from ArtifactoryExt
     foreach ($module in $requiredModules) {
         if (-not (Get-Module -ListAvailable -Name $module)) {
             try {
-                Write-Log -Message "Module '$module' not found. Attempting to install..." -Level "INFO"
+                Write-Log -Message "Module '$module' not found. Attempting to install from $repository..." -Level "INFO"
                 Install-Module -Name $module -Scope CurrentUser -Repository $repository -Force -ErrorAction Stop
-                Write-Log -Message "Module '$module' installed successfully." -Level "INFO"
+                Write-Log -Message "Module '$module' installed successfully from $repository." -Level "INFO"
             }
             catch {
-                Write-Log -Message "Failed to install module '$module'. Error: $_" -Level "ERROR"
+                Write-Log -Message "Failed to install module '$module' from $repository. Error: $_" -Level "ERROR"
                 throw "Module installation failed. Exiting script."
             }
         }
@@ -65,15 +84,33 @@ function Install-RequiredModules {
 }
 
 function Select-ExcelFile {
-    # Use Out-GridView only if the host supports it
-    if ($Host.UI.SupportsVirtualTerminal) {
-        $excelFiles = Get-ChildItem -Path . -Include *.xlsx, *.xls -File
-        if ($excelFiles.Count -eq 0) {
-            Write-Log -Message "No Excel files found in the current directory." -Level "ERROR"
-            throw "No Excel files to process. Exiting script."
-        }
+    # Attempt to retrieve Excel files using corrected Get-ChildItem usage
+    $excelFiles = Get-ChildItem -Path * -Include *.xlsx, *.xls -File -ErrorAction SilentlyContinue
 
-        Write-Log -Message "Listing Excel files for selection..." -Level "INFO"
+    # Alternative method using Where-Object if -Include fails
+    if ($excelFiles.Count -eq 0) {
+        $excelFiles = Get-ChildItem -Path . -File | Where-Object { $_.Extension -in ".xls", ".xlsx" }
+    }
+
+    if ($excelFiles.Count -eq 0) {
+        Write-Log -Message "No Excel files found in the current directory." -Level "ERROR"
+        throw "No Excel files to process. Exiting script."
+    }
+
+    Write-Log -Message "Listing Excel files for selection..." -Level "INFO"
+
+    # Check if Out-GridView is available
+    $outGridViewAvailable = $null
+    try {
+        $null = Get-Command Out-GridView -ErrorAction Stop
+        $outGridViewAvailable = $true
+    }
+    catch {
+        $outGridViewAvailable = $false
+    }
+
+    if ($outGridViewAvailable) {
+        # Use Out-GridView for GUI selection
         $selectedFile = $excelFiles | Out-GridView -Title "Select an Excel File" -PassThru
 
         if (-not $selectedFile) {
@@ -86,14 +123,8 @@ function Select-ExcelFile {
     }
     else {
         # Fallback to console selection
-        $excelFiles = Get-ChildItem -Path . -Include *.xlsx, *.xls -File
-        if ($excelFiles.Count -eq 0) {
-            Write-Log -Message "No Excel files found in the current directory." -Level "ERROR"
-            throw "No Excel files to process. Exiting script."
-        }
-
-        Write-Log -Message "Listing Excel files for selection..." -Level "INFO"
         Write-Output "Please select an Excel file from the list below by entering the corresponding number:"
+
         for ($i = 0; $i -lt $excelFiles.Count; $i++) {
             Write-Output "$($i + 1): $($excelFiles[$i].Name)"
         }
