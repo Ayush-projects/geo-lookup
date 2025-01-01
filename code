@@ -1,386 +1,194 @@
-function Test-AutopilotAttestation {
+<#
+.SYNOPSIS
+    Retrieves device information from Azure Active Directory based on Azure IDs from an Excel file.
 
-    # Define the log file path
-    $LogFile = "$PSScriptRoot\AutopilotAttestationLog_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+.DESCRIPTION
+    This script performs the following actions:
+    1. Checks for the presence of Microsoft.Graph and ImportExcel modules. Installs them if not present.
+    2. Creates a log file in the current directory with a timestamped filename.
+    3. Lists all Excel files in the current directory and prompts the user to select one.
+    4. Reads the selected Excel file and extracts Azure IDs from the 'Azure ID' column.
+    5. Connects to Microsoft Graph interactively.
+    6. Retrieves and logs all attributes of each device corresponding to the Azure IDs, searching both Entra Joined and Entra Registered devices.
 
-    # Define the Write-Log function
-    function Write-Log {
-        param (
-            [Parameter(Mandatory=$true)]
-            [string]$Message,
+.NOTES
+    - Requires PowerShell 5.1 or later.
+    - Ensure you have internet connectivity for module installation and Microsoft Graph authentication.
+#>
 
-            [Parameter(Mandatory=$false)]
-            [ValidateSet("Red", "Green", "Yellow", "DarkGreen")]
-            [string]$Color = "White"
-        )
+# --------------------------- Configuration ---------------------------
 
-        # Get current timestamp
-        $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+# Define the required modules
+$requiredModules = @('Microsoft.Graph', 'ImportExcel')
 
-        # Write to console with color
-        switch ($Color) {
-            "Red" { Write-Host "$Timestamp - $Message" -ForegroundColor Red }
-            "Green" { Write-Host "$Timestamp - $Message" -ForegroundColor Green }
-            "Yellow" { Write-Host "$Timestamp - $Message" -ForegroundColor Yellow }
-            "DarkGreen" { Write-Host "$Timestamp - $Message" -ForegroundColor DarkGreen }
-            default { Write-Host "$Timestamp - $Message" }
-        }
+# Define the repository to install modules from
+$repository = 'PSGallery'
 
-        # Write to log file without color
-        $LogEntry = "$Timestamp - $Message"
-        Add-Content -Path $LogFile -Value $LogEntry
-    }
+# Define the log file name with current date and time
+$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$logFile = Join-Path -Path (Get-Location) -ChildPath "ScriptLog_$timestamp.txt"
 
-    # Start logging
-    Write-Log -Message "Starting Autopilot Attestation Test" -Color "Yellow"
+# --------------------------- Functions ---------------------------
 
-    # Making sure the script is run as admin
-    $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-    $runasadmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-    if ($runasadmin -eq $false) {
-        Write-Log -Message "Script is not run as admin! Please rerun the script as admin" -Color "Red"
-        return
-    }
+function Write-Log {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]$Message,
 
-    Write-Log -Message "`n"
-
-    # Device Info
-    $SerialNoRaw = wmic bios get serialnumber
-    $SerialNo = $SerialNoRaw | Select-Object -Skip 1 | Where-Object { $_.Trim() -ne "" } | Select-Object -First 1
-
-    $ManufacturerRaw = wmic computersystem get manufacturer
-    $Manufacturer = $ManufacturerRaw | Select-Object -Skip 1 | Where-Object { $_.Trim() -ne "" } | Select-Object -First 1
-
-    $ModelNoRaw = wmic computersystem get model
-    $ModelNo = $ModelNoRaw | Select-Object -Skip 1 | Where-Object { $_.Trim() -ne "" } | Select-Object -First 1
-
-    Write-Log -Message "Computer Serial Number:`t $SerialNo" -Color "Yellow"
-    Write-Log -Message "Computer Supplier:`t $Manufacturer" -Color "Yellow"
-    Write-Log -Message "Computer Model:`t $ModelNo" -Color "Yellow"
-    Write-Log -Message "`n"
-
-    Write-Log -Message "Starting Connectivity test to Intel, Qualcomm, AMD, and Nuvoton" -Color "Yellow"
-    Write-Log -Message "`n"
-
-    # Define a helper function for connectivity test
-    function Test-Connectivity {
-        param(
-            [string]$HostName,
-            [int]$Port
-        )
-        $result = Test-NetConnection -ComputerName $HostName -Port $Port -InformationLevel Quiet
-        if ($result) {
-            Write-Log -Message "$HostName - Success" -Color "Green"
-        }
-        else {
-            Write-Log -Message "$HostName - Error" -Color "Red"
-        }
-    }
-
-    # Connectivity Tests
-    Test-Connectivity -HostName "ztd.dds.microsoft.com" -Port 443
-    Test-Connectivity -HostName "ekop.intel.com" -Port 443
-    Test-Connectivity -HostName "ekcert.spserv.microsoft.com" -Port 443
-    Test-Connectivity -HostName "ftpm.amd.com" -Port 443
-    Test-Connectivity -HostName "azure.net" -Port 443
-
-    Write-Log -Message "`n"
-
-    Write-Log -Message "Checking if the device has a required TPM 2.0 version" -Color "Yellow"
-
-    $TPMversion = Get-WmiObject -Namespace "root\cimv2\security\microsofttpm" -Query "SELECT SpecVersion FROM Win32_TPM" | Select-Object -ExpandProperty SpecVersion
-
-    if ($TPMversion -like "*1.2*") {
-        Write-Log -Message "TPM Version is 1.2. Attestation is not going to work!!!!" -Color "Red"
-    }
-    elseif ($TPMversion -like "*1.15*") {
-        Write-Log -Message "TPM Version is 1.15. You are probably running this script on a VM aren't you? Attestation doesn't work on a VM!" -Color "Red"
-    }
-    else {
-        Write-Log -Message "TPM Version is 2.0" -Color "Green"
-    }
-
-    Write-Log -Message "`n"
-
-    # Test TPM Attestation
-    $IntegrityServicesRegPath = "HKLM:\SYSTEM\CurrentControlSet\Control\IntegrityServices"
-    $WBCL = "WBCL"
-    $TaskStatesRegPath = "HKLM:\SYSTEM\CurrentControlSet\Services\TPM\WMI\taskStates"
-    $EkCertificatePresent = "EkCertificatePresent"
-    $OOBERegPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\OOBE"
-    $SetupDisplayedEula = "SetupDisplayedEula"
-
-    Write-Log -Message "Performing the first Ready For Attestation tests!" -Color "Yellow"
-    Write-Log -Message "`n"
-
-    $attestation = Get-CimInstance -Namespace 'root/cimv2/Security/MicrosoftTpm' -ClassName 'Win32_TPM' | Invoke-CimMethod -MethodName 'Isreadyinformation'
-    $attestationerror = $attestation.information
-
-    Write-Log -Message "Determining if the TPM has vulnerable Firmware" -Color "Yellow"
-
-    $IfxManufacturerIdInt = 0x49465800  # 'IFX'
-    function IsInfineonFirmwareVersionAffected ($FirmwareVersion) {
-        $FirmwareMajor = [int]$FirmwareVersion[0]
-        $FirmwareMinor = [int]$FirmwareVersion[1]
-        switch ($FirmwareMajor) {
-            4 { return ($FirmwareMinor -le 33) -or (($FirmwareMinor -ge 40) -and ($FirmwareMinor -le 42)) }
-            5 { return ($FirmwareMinor -le 61) }
-            6 { return ($FirmwareMinor -le 42) }
-            7 { return ($FirmwareMinor -le 61) }
-            133 { return ($FirmwareMinor -le 32) }
-            default { return $False }
-        }
-    }
-    function IsInfineonFirmwareVersionSusceptible ($FirmwareMajor) {
-        switch ($FirmwareMajor) {
-            4 { return $True }
-            5 { return $True }
-            6 { return $True }
-            7 { return $True }
-            133 { return $True }
-            default { return $False }
-        }
-    }
-
-    $Tpm = Get-Tpm
-    if (!$Tpm) {
-        Write-Log -Message "No TPM found on this system, so the issue does not apply here." -Color "Yellow"
-    }
-    else {
-        $ManufacturerIdInt = $Tpm.ManufacturerId
-        $FirmwareVersion = $Tpm.ManufacturerVersion -split "\."
-        $FirmwareVersionAtLastProvision = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\TPM\WMI" -Name "FirmwareVersionAtLastProvision" -ErrorAction SilentlyContinue).FirmwareVersionAtLastProvision
-
-        if ($ManufacturerIdInt -ne $IfxManufacturerIdInt) {
-            Write-Log -Message "This non-Infineon TPM is not affected by the issue." -Color "Green"
-        }
-        else {
-            if ($FirmwareVersion.Length -lt 2) {
-                Write-Log -Message "Could not get TPM firmware version from this TPM." -Color "Red"
-            }
-            else {
-                $FirmwareMajor = [int]$FirmwareVersion[0]
-                $FirmwareMinor = [int]$FirmwareVersion[1]
-                if (IsInfineonFirmwareVersionSusceptible($FirmwareMajor)) {
-                    if (IsInfineonFirmwareVersionAffected($FirmwareVersion)) {
-                        Write-Log -Message ("This Infineon firmware version {0}.{1} TPM is not safe. Please update your firmware." -f $FirmwareMajor, $FirmwareMinor) -Color "Red"
-                    }
-                    else {
-                        Write-Log -Message ("This Infineon firmware version {0}.{1} TPM is safe." -f $FirmwareMajor, $FirmwareMinor) -Color "Green"
-
-                        if (!$FirmwareVersionAtLastProvision) {
-                            Write-Log -Message "We cannot determine what the firmware version was when the TPM was last cleared. Please clear your TPM now that the firmware is safe." -Color "Red"
-                        }
-                        elseif (($FirmwareVersion[0] + "." + $FirmwareVersion[1]) -ne $FirmwareVersionAtLastProvision) {
-                            Write-Log -Message "The firmware version when the TPM was last cleared was different from the current firmware version. Please clear your TPM now that the firmware is safe." -Color "Yellow"
-                        }
-                    }
-                }
-                else {
-                    Write-Log -Message ("This Infineon firmware version {0}.{1} TPM is safe." -f $FirmwareMajor, $FirmwareMinor) -Color "Green"
-                }
-            }
-        }
-    }
-
-    Write-Log -Message "`n"
-
-    if ($attestationerror -eq "0") {
-        Write-Log -Message "TPM seems Ready For Attestation.. Let's Continue and run some more tests!" -Color "Green"
-    }
-    elseif ($attestationerror -ne "0") {
-        Write-Log -Message "TPM is NOT Ready For Attestation.. Let's run some tests!" -Color "Red"
-    }
-
-    if (!(Get-Tpm | Select-Object -ExpandProperty TpmOwned)) {
-        Write-Log -Message "Reason: TpmOwned is not owned!" -Color "Red"
-    }
-
-    if ($attestationerror -eq "16777216") {
-        Write-Log -Message "The TPM has a Health Attestation related vulnerability" -Color "Green"
-    } 
-
-    if (!(Get-ItemProperty -Path $IntegrityServicesRegPath -Name $WBCL -ErrorAction SilentlyContinue)) {
-        Write-Log -Message "Reason: Register value HKLM:\SYSTEM\CurrentControlSet\Control\IntegrityServices\WBCL does not exist! Measured boot logs are missing. Make sure you reboot your device!" -Color "Red"
-    }
-
-    if ($attestationerror -eq "262144") {
-        Write-Log -Message "EK Certificate seems to be missing, let's try to fix it!" -Color "Red"
-        Start-ScheduledTask -TaskPath "\Microsoft\Windows\TPM\" -TaskName "Tpm-Maintenance" -ErrorAction 'SilentlyContinue'
-        Start-Sleep -Seconds 5
-
-        $taskinfo = Get-ScheduledTaskInfo -TaskName "\Microsoft\Windows\TPM\Tpm-Maintenance" -ErrorAction SilentlyContinue
-        $tasklastruntime = $taskinfo.LastTaskResult  
-
-        if ($tasklastruntime -ne 0) {
-            Write-Log -Message "Reason: TPM-Maintenance Task could not be run! Checking and Configuring the EULA Key!" -Color "Red"
-        }
-
-        if ((!(Get-ItemProperty -Path $OOBERegPath -Name $SetupDisplayedEula -ErrorAction SilentlyContinue)) -or 
-            ((Get-ItemProperty -Path $OOBERegPath -Name $SetupDisplayedEula -ErrorAction SilentlyContinue).SetupDisplayedEula -ne 1)) 
-        {
-            Write-Log -Message "Reason: Register value HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\OOBE\SetupDisplayedEula does not exist! EULA is not accepted!" -Color "Red"
-            New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\OOBE\' `
-                            -Name 'SetupDisplayedEula' `
-                            -Value '1' `
-                            -PropertyType 'DWORD' `
-                            -Force | Out-Null
-            Write-Log -Message "SetupDisplayedEula registry key configured, rerunning the TPM-Maintenance Task" -Color "Yellow"
-            Start-ScheduledTask -TaskPath "\Microsoft\Windows\TPM\" -TaskName "Tpm-Maintenance" -ErrorAction 'SilentlyContinue'  
-        }
-        Start-Sleep -Seconds 5
-        $taskinfo = Get-ScheduledTaskInfo -TaskName "\Microsoft\Windows\TPM\Tpm-Maintenance" -ErrorAction SilentlyContinue
-        $tasklastruntime = $taskinfo.LastTaskResult  
-
-        if ($tasklastruntime -ne 0) {
-            Write-Log -Message "TPM-Maintenance task could not be run successfully despite the EULA key being set! Exiting now!" -Color "Red"
-        }
-
-        if ($tasklastruntime -eq 0) {
-            Write-Log -Message "EULA Key is set and TPM-Maintenance Task has been run without issues" -Color "Green"
-            Write-Log -Message "Please note, this doesn't mean the TPM-Maintenance task did its job! Let's test it again" -Color "Yellow"
-            Write-Log -Message "`n"
-        }
-    }
-
-    if (!(Test-Path -Path "HKLM:\SYSTEM\CurrentControlSet\Services\Tpm\WMI\Endorsement\EKCertStore\Certificates\*")) {
-        Write-Log -Message "Reason: EKCert seems still to be missing in HKLM:\SYSTEM\CurrentControlSet\Services\Tpm\WMI\Endorsement\EKCertStore\Certificates\ - Launching TPM-Maintenance Task again!" -Color "Red"
-        Start-ScheduledTask -TaskPath "\Microsoft\Windows\TPM\" -TaskName "Tpm-Maintenance" -ErrorAction 'SilentlyContinue' 
-        Start-Sleep -Seconds 5
-        Write-Log -Message "`n"
-        Write-Log -Message "Attempting to install EKCert manually." -Color "Yellow"
-
-        rundll32 tpmcoreprovisioning.dll,TpmProvision
-        rundll32 tpmcoreprovisioning.dll,TpmCertInstallNvEkCerts
-        rundll32 tpmcoreprovisioning.dll,TpmRetrieveEkCertificate
-        rundll32 tpmcoreprovisioning.dll,TpmCertGetEkCertFromWeb
-        Start-Sleep -Seconds 5
-        rundll32 tpmcoreprovisioning.dll,TpmCertGetWindowsAik
-        rundll32 tpmcoreprovisioning.dll,TpmCheckCreateWindowsAIK
-        rundll32 tpmcoreprovisioning.dll,TpmEnrollWindowsAikCertificate 
-        Start-Sleep -Seconds 1
-    }
-
-    $endorsementkey = Get-TpmEndorsementKeyInfo   
-    if ($endorsementkey.IsPresent -ne $true) {
-        Write-Log -Message "Endorsement key still not present!!" -Color "Red"
-    } 
-    else {
-        Write-Log -Message "Endorsement key is present!" -Color "Green"
-        Write-Log -Message "Checking if the Endorsement key has its required certificates attached" -Color "Yellow"
-
-        $manufacturercerts = $endorsementkey.ManufacturerCertificates
-        $additionalcerts = $endorsementkey.AdditionalCertificates
-
-        if ((!$additionalcerts) -and (!$manufacturercerts)) {
-            Write-Log -Message "`nThis is definitely not good! Additional and/or ManufacturerCerts are missing!" -Color "Red"
-        } 
-        else {
-            Write-Log -Message "We have found the required certificates" -Color "Green"
-            $additionalcerts | ForEach-Object { Write-Log -Message $_ -Color "Green" }
-            $manufacturercerts | ForEach-Object { Write-Log -Message $_ -Color "Green" }
-            Write-Log -Message "`n"
-        }
-    }           
-
-    # Getting AIK Test CertEnroll error
-    $attestation = Get-CimInstance -Namespace 'root/cimv2/Security/MicrosoftTpm' -ClassName 'Win32_TPM' | Invoke-CimMethod -MethodName 'Isreadyinformation'
-    $attestationerror = $attestation.information
-
-    if ($attestationerror -eq "0") {
-        Write-Log -Message "Retrieving AIK Certificate....." -Color "Green"
-
-        $errorcert = 1
-        for ($num = 1; $errorcert -ne -1; $num++) {
-            Write-Log -Message "Fetching test-AIK cert - attempt $num" -Color "Yellow"
-            $certcmd = cmd.exe /c "certreq -q -enrollaik"
-
-            # Capture output
-            $certOutput = $certcmd 2>&1
-
-            $startcert  = [array]::IndexOf($certOutput, "-----BEGIN CERTIFICATE-----")
-            $endcert    = [array]::IndexOf($certOutput, "-----END CERTIFICATE-----")
-            $errorcert  = [array]::IndexOf($certOutput, '{"Message":"Failed to parse SCEP request."}')
-
-            Write-Log -Message "Checking the Output to determine if the AIK CA Url is valid!" -Color "Yellow"
-
-            $Cacapserror = $certOutput -like "*GetCACaps: Not Found*"
-            if ($Cacapserror) {
-                Write-Log -Message "AIK CA Url is not valid" -Color "Red"
-            } 
-            else {
-                Write-Log -Message "AIK CA Url seems valid" -Color "Green"
-            }
-
-            if (($startcert -ne -1) -and ($endcert -ne -1)) {
-                $certlength = $endcert - $startcert
-                if ($certlength -gt 1) {
-                    $cert = $certOutput[$startcert..$endcert] -join "`n"
-                    Write-Log -Message "Found Test AIK Certificate" -Color "Green"
-                    Write-Log -Message "`n"
-                    Write-Log -Message $cert -Color "DarkGreen"
-                    Write-Log -Message "`n"
-                    Write-Log -Message "AIK Test AIK Enrollment succeeded" -Color "Green"
-                    break
-                }
-                else {
-                    Write-Log -Message "AIK TEST Certificate could not be retrieved" -Color "Red"
-                    if ($num -ge 10) {
-                        Write-Log -Message "Retried 10 times, stopping attempts." -Color "Red"
-                        break
-                    }
-                }
-            }
-            else {
-                Write-Log -Message "AIK TEST Certificate could not be retrieved" -Color "Red"
-                if ($num -ge 10) {
-                    Write-Log -Message "Retried 10 times, stopping attempts." -Color "Red"
-                    break
-                }
-            }
-        }
-    }
-
-    # Fetching AIK CertEnroll Error
-    Write-Log -Message "Running another test to determine if the TPM is capable for key attestation..." -Color "Yellow"
-
-    $attestationcapable = Get-CimInstance -Namespace 'root/cimv2/Security/MicrosoftTpm' -ClassName 'Win32_TPM' | Invoke-CimMethod -MethodName 'IsKeyAttestationCapable'
-    $attestationcapable = $attestationcapable.testresult
-
-    if ($attestationcapable -ne 0) {
-        Write-Log -Message "Reason: TPM doesn't seem capable for Attestation!" -Color "Red"
-        tpmtool getdeviceinformation  
-    }
-    else {
-        Write-Log -Message "TPM is capable for attestation!" -Color "Green"
-    }
-
-    Write-Log -Message "Launching the real AIK CertEnroll task!" -Color "Yellow"
-    Start-ScheduledTask -TaskPath "\Microsoft\Windows\CertificateServicesClient\" -TaskName "AikCertEnrollTask"
-    Start-Sleep -Seconds 5
-
-    $AIKErrorPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Cryptography\Ngc\AIKCertEnroll\"
-    $AIKErrorCode = (Get-ItemProperty -Path $AIKErrorPath -Name "ErrorCode" -ErrorAction SilentlyContinue).ErrorCode
-    if ($AIKErrorCode -ne 0) {
-        Write-Log -Message "Reason: AIK Cert Enroll Failed!" -Color "Red"
-        tpmtool getdeviceinformation
-    }
-    else {
-        Write-Log -Message "`n"
-        Write-Log -Message "AIK Cert Enroll Task Succeeded, Looks like the device is 100% Ready for Attestation! You can start the Autopilot Pre-Provisioning!" -Color "Green"
-        # Removed GUI display
-    }
-
-    Write-Log -Message "`n"
-    if ($attestationerror -eq "0") {
-        # Success message already shown above
-    }
-    else {
-        Write-Log -Message "TPM is still NOT suited for Autopilot Pre-Provisioning, please re-run the test again" -Color "Red"
-    }
-
-    Write-Log -Message "Autopilot Attestation Test Completed." -Color "Yellow"
+        [ValidateSet("INFO","ERROR","WARN","DEBUG")]
+        [string]$Level = "INFO"
+    )
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logEntry = "$timestamp [$Level] $Message"
+    Write-Output $logEntry
+    Add-Content -Path $logFile -Value $logEntry
 }
 
-# Execute the function
-Test-AutopilotAttestation
+function Install-RequiredModules {
+    foreach ($module in $requiredModules) {
+        if (-not (Get-Module -ListAvailable -Name $module)) {
+            try {
+                Write-Log -Message "Module '$module' not found. Attempting to install..." -Level "INFO"
+                Install-Module -Name $module -Scope CurrentUser -Repository $repository -Force -ErrorAction Stop
+                Write-Log -Message "Module '$module' installed successfully." -Level "INFO"
+            }
+            catch {
+                Write-Log -Message "Failed to install module '$module'. Error: $_" -Level "ERROR"
+                throw "Module installation failed. Exiting script."
+            }
+        }
+        else {
+            Write-Log -Message "Module '$module' is already installed." -Level "INFO"
+        }
+    }
+}
+
+function Select-ExcelFile {
+    $excelFiles = Get-ChildItem -Path . -Filter *.xlsx, *.xls -File
+    if ($excelFiles.Count -eq 0) {
+        Write-Log -Message "No Excel files found in the current directory." -Level "ERROR"
+        throw "No Excel files to process. Exiting script."
+    }
+
+    Write-Log -Message "Listing Excel files for selection..." -Level "INFO"
+    $selectedFile = $excelFiles | Out-GridView -Title "Select an Excel File" -PassThru
+
+    if (-not $selectedFile) {
+        Write-Log -Message "No file selected by the user." -Level "WARN"
+        throw "No file selected. Exiting script."
+    }
+
+    Write-Log -Message "User selected file: $($selectedFile.Name)" -Level "INFO"
+    return $selectedFile.FullName
+}
+
+function Connect-ToGraph {
+    try {
+        Write-Log -Message "Attempting to connect to Microsoft Graph..." -Level "INFO"
+        Connect-MgGraph -Scopes "Device.Read.All", "Directory.Read.All" -ErrorAction Stop
+        Write-Log -Message "Successfully connected to Microsoft Graph." -Level "INFO"
+    }
+    catch {
+        Write-Log -Message "Failed to connect to Microsoft Graph. Error: $_" -Level "ERROR"
+        throw "Graph connection failed. Exiting script."
+    }
+}
+
+function Get-DeviceByAzureID {
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]$AzureID
+    )
+
+    try {
+        # Attempt to retrieve the device by ID
+        $device = Get-MgDevice -DeviceId $AzureID -Property "*" -ErrorAction SilentlyContinue
+
+        if (-not $device) {
+            # If not found, try to search in registered devices
+            $registeredDevices = Get-MgDeviceRegisteredUser -DeviceId $AzureID -ErrorAction SilentlyContinue
+            if ($registeredDevices) {
+                $device = $registeredDevices
+            }
+        }
+
+        return $device
+    }
+    catch {
+        Write-Log -Message "Error retrieving device with Azure ID '$AzureID': $_" -Level "ERROR"
+        return $null
+    }
+}
+
+# --------------------------- Script Execution ---------------------------
+
+try {
+    # Start logging
+    Write-Log -Message "Script execution started." -Level "INFO"
+
+    # Install and import required modules
+    Install-RequiredModules
+    foreach ($module in $requiredModules) {
+        Import-Module -Name $module -Force -ErrorAction Stop
+        Write-Log -Message "Module '$module' imported successfully." -Level "INFO"
+    }
+
+    # Select Excel file
+    $excelFilePath = Select-ExcelFile
+
+    # Import Excel data
+    Write-Log -Message "Importing data from Excel file '$excelFilePath'." -Level "INFO"
+    $excelData = Import-Excel -Path $excelFilePath -ErrorAction Stop
+
+    if (-not ($excelData | Get-Member -Name 'Azure ID')) {
+        Write-Log -Message "The selected Excel file does not contain an 'Azure ID' column." -Level "ERROR"
+        throw "Missing 'Azure ID' column. Exiting script."
+    }
+
+    $azureIDs = $excelData.'Azure ID' | Where-Object { $_ -and $_.Trim() -ne "" } | Select-Object -Unique
+
+    if ($azureIDs.Count -eq 0) {
+        Write-Log -Message "No Azure IDs found in the 'Azure ID' column." -Level "ERROR"
+        throw "No Azure IDs to process. Exiting script."
+    }
+
+    Write-Log -Message "$($azureIDs.Count) unique Azure IDs found." -Level "INFO"
+
+    # Connect to Microsoft Graph
+    Connect-ToGraph
+
+    # Iterate through each Azure ID and retrieve device information
+    foreach ($id in $azureIDs) {
+        Write-Log -Message "Processing Azure ID: $id" -Level "INFO"
+        $device = Get-DeviceByAzureID -AzureID $id
+
+        if ($device) {
+            Write-Log -Message "Device found for Azure ID '$id'. Retrieving attributes..." -Level "INFO"
+            # Convert device object to a readable string
+            $deviceProperties = $device | Select-Object -Property * | Out-String
+            Write-Log -Message "Attributes for Azure ID '$id':`n$deviceProperties" -Level "INFO"
+
+            # Optionally, you can also print to console
+            Write-Output "----- Device Attributes for Azure ID: $id -----"
+            Write-Output $deviceProperties
+        }
+        else {
+            Write-Log -Message "No device found for Azure ID '$id'." -Level "WARN"
+            Write-Output "No device found for Azure ID: $id"
+        }
+    }
+
+    Write-Log -Message "Script execution completed successfully." -Level "INFO"
+}
+catch {
+    Write-Log -Message "Script terminated with an error: $_" -Level "ERROR"
+    Write-Error "An error occurred: $_"
+}
+finally {
+    # Optionally, disconnect from Microsoft Graph
+    if (Get-MgProfile -ErrorAction SilentlyContinue) {
+        Disconnect-MgGraph
+        Write-Log -Message "Disconnected from Microsoft Graph." -Level "INFO"
+    }
+}
