@@ -1,0 +1,148 @@
+# Set script parameters
+Param(
+    [Parameter(Mandatory=$true)]
+    [string]$TenantID,
+    [Parameter(Mandatory=$true)]
+    [string]$AppID,
+    [Parameter(Mandatory=$true)]
+    [string]$SecretID,
+    [Parameter(Mandatory=$true)]
+    [string]$GroupTag
+)
+
+$WorkingDir = $env:TEMP
+$LogFilePath = "C:\Windows\Temp\Set-GroupTag.log"
+
+# Set environment variable
+[System.Environment]::SetEnvironmentVariable('LOCALAPPDATA',"$env:SystemDrive\Windows\system32\config\systemprofile\AppData\Local")
+
+# Function for logging
+Function Write-Log {
+    Param(
+        [String]$Path,
+        [String]$Message,
+        [String]$Component,
+        [ValidateSet('Info', 'Warning', 'Error')]
+        [String]$Type
+    )
+
+    switch ($Type) {
+        'Info' { [int]$Type = 1 }
+        'Warning' { [int]$Type = 2 }
+        'Error' { [int]$Type = 3 }
+    }
+
+    # Log format
+    $Content = "<![LOG[$Message]LOG]!>" + `
+        "<time=`"$(Get-Date -Format 'HH:mm:ss.ffffff')`" " + `
+        "date=`"$(Get-Date -Format 'M-d-yyyy')`" " + `
+        "component=`"$Component`" " + `
+        "context=`"$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)`" " + `
+        "type=`"$Type`" " + `
+        "thread=`"$([Threading.Thread]::CurrentThread.ManagedThreadId)`" " + `
+        "file=`"`">"
+
+    # Write log
+    Add-Content -Path $Path -Value $Content
+}
+
+# Check internet connectivity
+If (Test-Connection 8.8.8.8 -quiet) {
+    Write-Log -Type Info -Message "Internet Connection OK" -Component "Internet Check" -Path $LogFilePath
+} Else {
+    Write-Log -Type Error -Message "Internet Connection check failed" -Component "Internet Check" -Path $LogFilePath
+    Exit 1
+}
+
+# Enable TLS 1.2 for secure communication
+Try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    Write-Log -Type Info -Message "TLS 1.2 Enabled" -Component "TLS 1.2 Check" -Path $LogFilePath
+} Catch {
+    Write-Log -Type Error -Message ($_ | Out-String) -Component "TLS 1.2 Check" -Path $LogFilePath
+}
+
+# Define function to collect Autopilot info (Integrated Get-WindowsAutoPilotInfo)
+Function Get-WindowsAutoPilotInfo {
+    Param(
+        [String]$OutputFile = "$WorkingDir\AutoPilotDevices.csv",
+        [String]$TenantID,
+        [String]$AppID,
+        [String]$SecretID,
+        [String]$GroupTag
+    )
+
+    $computers = @()
+
+    # Get current computer details
+    $serial = (Get-CimInstance -Class Win32_BIOS).SerialNumber
+    $devDetail = Get-CimInstance -Namespace root/cimv2/mdm/dmmap -Class MDM_DevDetail_Ext01 -Filter "InstanceID='Ext' AND ParentID='./DevDetail'"
+    
+    if ($devDetail) {
+        $hash = $devDetail.DeviceHardwareData
+    } Else {
+        Write-Log -Type Error -Message "Unable to retrieve hardware hash" -Component "DeviceInfo" -Path $LogFilePath
+        Exit 1
+    }
+
+    # Create object
+    $device = New-Object PSObject -Property @{
+        "Device Serial Number" = $serial
+        "Hardware Hash" = $hash
+        "Group Tag" = $GroupTag
+    }
+    $computers += $device
+
+    # Export to CSV
+    $computers | ConvertTo-Csv -NoTypeInformation | Out-File $OutputFile
+    Write-Log -Type Info -Message "Device info exported to $OutputFile" -Component "DeviceInfo" -Path $LogFilePath
+
+    return $OutputFile
+}
+
+# Get Autopilot information
+$csvFile = Get-WindowsAutoPilotInfo -TenantID $TenantID -AppID $AppID -SecretID $SecretID -GroupTag $GroupTag
+
+# Upload to Autopilot (Intune Graph API)
+Try {
+    $graphAuthHeader = @{
+        'Content-Type'  = "application/json"
+        'Authorization' = "Bearer $SecretID"
+    }
+
+    $csvData = Get-Content -Path $csvFile -Raw
+    $graphUri = "https://graph.microsoft.com/beta/deviceManagement/importedWindowsAutopilotDeviceIdentities"
+
+    Invoke-RestMethod -Uri $graphUri -Headers $graphAuthHeader -Method Post -Body $csvData
+
+    Write-Log -Type Info -Message "Autopilot data uploaded successfully" -Component "AutopilotUpload" -Path $LogFilePath
+} Catch {
+    Write-Log -Type Error -Message ($_ | Out-String) -Component "AutopilotUpload" -Path $LogFilePath
+    Exit 1
+}
+
+# Wait for device sync
+Write-Log -Type Info -Message "Waiting for device sync in Intune" -Component "DeviceSync" -Path $LogFilePath
+Start-Sleep -Seconds 60
+
+# Add device to AAD Group if specified
+If ($GroupTag -ne "") {
+    Try {
+        $aadGroupUri = "https://graph.microsoft.com/v1.0/groups"
+        $aadGroupBody = @{
+            "displayName" = $GroupTag
+            "groupTypes" = @("Unified")
+            "mailEnabled" = $false
+            "securityEnabled" = $true
+        } | ConvertTo-Json -Depth 3
+
+        Invoke-RestMethod -Uri $aadGroupUri -Headers $graphAuthHeader -Method Post -Body $aadGroupBody
+
+        Write-Log -Type Info -Message "Added device to AAD Group $GroupTag" -Component "AADGroup" -Path $LogFilePath
+    } Catch {
+        Write-Log -Type Error -Message ($_ | Out-String) -Component "AADGroup" -Path $LogFilePath
+    }
+}
+
+# Final log message
+Write-Log -Type Info -Message "Windows Autopilot process completed" -Component "Finalization" -Path $LogFilePath
