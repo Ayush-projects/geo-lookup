@@ -1,3 +1,8 @@
-@echo off
-PowerShell -ExecutionPolicy Bypass -File "C:\Scripts\GetAutopilotEvents.ps1"
-exit
+Outcome =
+SWITCH(
+    TRUE(),
+    'AutopilotEvents'[deploymentState] = "success" && 'AutopilotEvents'[accountSetupStatus] <> "unknown", "Success",
+    'AutopilotEvents'[deploymentState] <> "success", "Failure",
+    'AutopilotEvents'[accountSetupStatus] = "unknown", "Unknown",
+    "Other"
+)
