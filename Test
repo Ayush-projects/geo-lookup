@@ -1,3 +1,8 @@
+# Ensure Import-Excel Module is available
+If (!(Get-Module -ListAvailable -Name ImportExcel)) {
+    Install-Module -Name ImportExcel -Scope CurrentUser -Force
+}
+
 # Define your Azure AD App Credentials
 $TenantID = "your-tenant-id"
 $ClientID = "your-client-id"
@@ -53,10 +58,12 @@ Function Get-ManagedDevices {
 # Get all managed devices
 $ManagedDevices = Get-ManagedDevices
 
-# Export the results to a CSV file
-$OutputFile = "C:\Scripts\ManagedDevices.csv"
-$ManagedDevices | Export-Csv -Path $OutputFile -NoTypeInformation
+# Define Output Excel File Path
+$OutputExcel = "C:\Scripts\ManagedDevices.xlsx"
+
+# Export to Excel
+$ManagedDevices | Export-Excel -Path $OutputExcel -WorksheetName "IntuneDevices" -AutoSize -BoldTopRow
 
 # Output the number of devices retrieved
 Write-Host "Total managed devices retrieved: $($ManagedDevices.Count)"
-Write-Host "Data saved to $OutputFile"
+Write-Host "Data saved to $OutputExcel"
