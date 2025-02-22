@@ -8,8 +8,8 @@ $TenantID = "your-tenant-id"
 $ClientID = "your-client-id"
 $ClientSecret = "your-client-secret"
 
-# Microsoft Graph API endpoint for managed devices
-$GraphEndpoint = "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices"
+# Microsoft Graph API endpoint for Windows Autopilot Events
+$GraphEndpoint = "https://graph.microsoft.com/beta/deviceManagement/windowsAutopilotDeviceIdentities"
 
 # Function to get an access token
 Function Get-AuthToken {
@@ -27,21 +27,21 @@ Function Get-AuthToken {
 # Get authentication token
 $AccessToken = Get-AuthToken
 
-# Function to fetch all managed devices (handling pagination)
-Function Get-ManagedDevices {
+# Function to fetch all Autopilot device events (handling pagination)
+Function Get-AutopilotEvents {
     $Headers = @{
         Authorization = "Bearer $AccessToken"
         "Content-Type" = "application/json"
     }
 
-    $AllDevices = @()
+    $AllEvents = @()
     $NextLink = $GraphEndpoint  # Initial API call
 
     while ($NextLink) {
         $Response = Invoke-RestMethod -Uri $NextLink -Headers $Headers -Method Get
 
         if ($Response.value) {
-            $AllDevices += $Response.value
+            $AllEvents += $Response.value
         }
 
         # Check for pagination (if @odata.nextLink exists, it means more data needs to be fetched)
@@ -52,18 +52,18 @@ Function Get-ManagedDevices {
         }
     }
 
-    return $AllDevices
+    return $AllEvents
 }
 
-# Get all managed devices
-$ManagedDevices = Get-ManagedDevices
+# Get all Autopilot events
+$AutopilotEvents = Get-AutopilotEvents
 
 # Define Output Excel File Path
-$OutputExcel = "C:\Scripts\ManagedDevices.xlsx"
+$OutputExcel = "C:\Scripts\AutopilotEvents.xlsx"
 
 # Export to Excel
-$ManagedDevices | Export-Excel -Path $OutputExcel -WorksheetName "IntuneDevices" -AutoSize -BoldTopRow
+$AutopilotEvents | Export-Excel -Path $OutputExcel -WorksheetName "AutopilotEvents" -AutoSize -BoldTopRow
 
-# Output the number of devices retrieved
-Write-Host "Total managed devices retrieved: $($ManagedDevices.Count)"
+# Output the number of records retrieved
+Write-Host "Total Autopilot events retrieved: $($AutopilotEvents.Count)"
 Write-Host "Data saved to $OutputExcel"
