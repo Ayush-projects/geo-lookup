@@ -1,8 +1,10 @@
-Outcome =
-SWITCH(
-    TRUE(),
-    'AutopilotEvents'[deploymentState] = "success" && 'AutopilotEvents'[accountSetupStatus] <> "unknown", "Success",
-    'AutopilotEvents'[deploymentState] <> "success", "Failure",
-    'AutopilotEvents'[accountSetupStatus] = "unknown", "Unknown",
-    "Other"
+Outcome = 
+IF(
+    'AutopilotEvents'[deploymentState] = "success",
+    "Success",
+    IF(
+        'AutopilotEvents'[accountSetupStatus] = "unknown",
+        "Unknown",
+        "Failure"
+    )
 )
