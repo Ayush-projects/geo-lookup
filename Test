@@ -1,36 +1,62 @@
-# Define the API endpoint
-$uri = "https://graph.microsoft.com/v1.0/deviceManagement/importedWindowsAutopilotDeviceIdentities/import"
+# Define your Azure AD App Credentials
+$TenantID = "your-tenant-id"
+$ClientID = "your-client-id"
+$ClientSecret = "your-client-secret"
 
-# Authorization Token (replace with your actual token)
-$token = "YOUR_BEARER_TOKEN"
+# Microsoft Graph API endpoint for managed devices
+$GraphEndpoint = "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices"
 
-# Define Headers
-$headers = @{
-    "Authorization" = "Bearer $token"
-    "Content-Type"  = "application/json"
-}
-
-# Define the Body (replace with your actual payload)
-$body = @{
-    # Example payload, adjust according to API requirements
-    "serialNumber" = "1234567890",
-    "productKey"   = "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
-} | ConvertTo-Json
-
-# Make the POST request
-try {
-    $response = Invoke-RestMethod -Uri $uri -Headers $headers -Method Post -Body $body
-    Write-Output "Success: $($response | ConvertTo-Json -Depth 10)"
-}
-catch {
-    # Catch and display the error response
-    if ($_.Exception.Response -ne $null) {
-        $streamReader = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream())
-        $errorResponse = $streamReader.ReadToEnd() | ConvertFrom-Json
-        Write-Output "Error Code: $($errorResponse.error.code)"
-        Write-Output "Message: $($errorResponse.error.message)"
-        Write-Output "Inner Error: $($errorResponse.error.innerError.message)"
-    } else {
-        Write-Output "Unexpected Error: $($_.Exception.Message)"
+# Function to get an access token
+Function Get-AuthToken {
+    $Body = @{
+        client_id     = $ClientID
+        scope         = "https://graph.microsoft.com/.default"
+        client_secret = $ClientSecret
+        grant_type    = "client_credentials"
     }
+    
+    $TokenResponse = Invoke-RestMethod -Uri "https://login.microsoftonline.com/$TenantID/oauth2/v2.0/token" -Method Post -Body $Body -ContentType "application/x-www-form-urlencoded"
+    return $TokenResponse.access_token
 }
+
+# Get authentication token
+$AccessToken = Get-AuthToken
+
+# Function to fetch all managed devices (handling pagination)
+Function Get-ManagedDevices {
+    $Headers = @{
+        Authorization = "Bearer $AccessToken"
+        "Content-Type" = "application/json"
+    }
+
+    $AllDevices = @()
+    $NextLink = $GraphEndpoint  # Initial API call
+
+    while ($NextLink) {
+        $Response = Invoke-RestMethod -Uri $NextLink -Headers $Headers -Method Get
+
+        if ($Response.value) {
+            $AllDevices += $Response.value
+        }
+
+        # Check for pagination (if @odata.nextLink exists, it means more data needs to be fetched)
+        if ($Response."@odata.nextLink") {
+            $NextLink = $Response."@odata.nextLink"
+        } else {
+            $NextLink = $null
+        }
+    }
+
+    return $AllDevices
+}
+
+# Get all managed devices
+$ManagedDevices = Get-ManagedDevices
+
+# Export the results to a CSV file
+$OutputFile = "C:\Scripts\ManagedDevices.csv"
+$ManagedDevices | Export-Csv -Path $OutputFile -NoTypeInformation
+
+# Output the number of devices retrieved
+Write-Host "Total managed devices retrieved: $($ManagedDevices.Count)"
+Write-Host "Data saved to $OutputFile"
