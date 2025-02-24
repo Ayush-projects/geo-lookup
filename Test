@@ -1,12 +1,23 @@
-TimePeriodSelection = 
-DATATABLE(
-    "TimePeriod", STRING,
-    {
-        {"Last 1d"},
-        {"Last 3d"},
-        {"Last 5d"},
-        {"Last 7d"},
-        {"Last 15d"},
-        {"All"}
-    }
+Filtered Device Count =
+VAR SelectedOption = SELECTEDVALUE(TimePeriodSelection[TimePeriod], "All")
+VAR DaysToSubtract =
+    SWITCH(
+        SelectedOption,
+        "Last 1d", 1,
+        "Last 3d", 3,
+        "Last 5d", 5,
+        "Last 7d", 7,
+        "Last 15d", 15,
+        BLANK()
+    )
+VAR LowerBoundDate =
+    IF(SelectedOption <> "All", TODAY() - DaysToSubtract, BLANK())
+RETURN
+IF(
+    SelectedOption = "All",
+    COUNTROWS('AutopilotEvents'),
+    CALCULATE(
+        COUNTROWS('AutopilotEvents'),
+        'AutopilotEvents'[DeploymentDate] >= LowerBoundDate
+    )
 )
