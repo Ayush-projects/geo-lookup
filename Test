@@ -1,10 +1,9 @@
-Outcome = 
-IF(
-    'AutopilotEvents'[deploymentState] = "success",
-    "Success",
-    IF(
-        'AutopilotEvents'[accountSetupStatus] = "unknown",
-        "Unknown",
-        "Failure"
+Cumulative Successful Device Count =
+CALCULATE(
+    [Device Count],
+    FILTER(
+        ALLSELECTED('AutopilotEvents'),
+        'AutopilotEvents'[DeploymentDate] <= MAX('AutopilotEvents'[DeploymentDate])
+            && 'AutopilotEvents'[deploymentState] = "success"
     )
 )
