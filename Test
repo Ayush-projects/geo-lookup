@@ -1,20 +1,6 @@
-Filtered Device Count =
-VAR SelectedOption =
-    SELECTEDVALUE(TimePeriodSelection[TimePeriod], "Last 7d")
-VAR DaysToSubtract =
-    SWITCH(
-        SelectedOption,
-        "Last 1d", 1,
-        "Last 3d", 3,
-        "Last 5d", 5,
-        "Last 7d", 7,
-        "Last 15d", 15,
-        BLANK()
-    )
-VAR LowerBoundDate =
-    IF(SelectedOption <> BLANK(), TODAY() - DaysToSubtract, BLANK())
-RETURN
-CALCULATE(
-    COUNTROWS('AutopilotEvents'),
-    'AutopilotEvents'[DeploymentDate] >= LowerBoundDate
+DeploymentDurationMinutes =
+DATEDIFF(
+    'AutopilotEvents'[deploymentStartDateTime],
+    'AutopilotEvents'[deploymentEndDateTime],
+    MINUTE
 )
