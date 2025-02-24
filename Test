@@ -1,8 +1,12 @@
-Cumulative Successful Device Count =
-CALCULATE(
-    [Successful Device Count],
-    FILTER(
-        ALLSELECTED('AutopilotEvents'),
-        'AutopilotEvents'[DeploymentDate] <= MAX('AutopilotEvents'[DeploymentDate])
-    )
+TimePeriodSelection = 
+DATATABLE(
+    "TimePeriod", STRING,
+    {
+        {"Last 1d"},
+        {"Last 3d"},
+        {"Last 5d"},
+        {"Last 7d"},
+        {"Last 15d"},
+        {"All"}
+    }
 )
