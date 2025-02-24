@@ -1,6 +1,11 @@
-DeploymentDurationMinutes =
-DATEDIFF(
-    'AutopilotEvents'[deploymentStartDateTime],
-    'AutopilotEvents'[deploymentEndDateTime],
-    MINUTE
+DeploymentDurationBucket =
+VAR BucketNumber = DIVIDE('AutopilotEvents'[DeploymentDurationMinutes], 15, 0)
+VAR BucketFloor = ROUNDDOWN(BucketNumber, 0)
+VAR StartRange = BucketFloor * 15
+VAR EndRange = StartRange + 15
+RETURN
+IF(
+    StartRange >= 240,
+    "Over 240 min",
+    FORMAT(StartRange, "0") & "-" & FORMAT(EndRange, "0") & " min"
 )
