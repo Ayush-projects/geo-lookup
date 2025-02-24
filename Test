@@ -1,9 +1,8 @@
 Cumulative Successful Device Count =
 CALCULATE(
-    [Device Count],
+    [Successful Device Count],
     FILTER(
         ALLSELECTED('AutopilotEvents'),
         'AutopilotEvents'[DeploymentDate] <= MAX('AutopilotEvents'[DeploymentDate])
-            && 'AutopilotEvents'[deploymentState] = "success"
     )
 )
