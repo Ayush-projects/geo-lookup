@@ -1,256 +1,69 @@
-<#
-.SYNOPSIS
-    Retrieves device information from Azure Active Directory based on Azure IDs from an Excel file.
-
-.DESCRIPTION
-    This script performs the following actions:
-    1. Checks for the presence of Microsoft.Graph and ImportExcel modules. Installs them if not present using the ArtifactoryExt repository.
-    2. Creates a log file in the current directory with a timestamped filename.
-    3. Lists all Excel files in the current directory and prompts the user to select one.
-    4. Reads the selected Excel file and extracts Azure IDs from the 'Azure ID' column.
-    5. Connects to Microsoft Graph interactively.
-    6. Retrieves and logs all attributes of each device corresponding to the Azure IDs, searching both Entra Joined and Entra Registered devices.
-
-.NOTES
-    - Requires PowerShell 5.1 or later.
-    - Ensure you have internet connectivity for module installation and Microsoft Graph authentication.
-#>
-
-# --------------------------- Configuration ---------------------------
-
-# Define the required modules
-$requiredModules = @('Microsoft.Graph', 'ImportExcel')
-
-# Define the repository to install modules from
-$repository = 'ArtifactoryExt'
-
-# Define the log file name with current date and time
-$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$logFile = Join-Path (Get-Location) -ChildPath "ScriptLog_$timestamp.txt"
-
-# --------------------------- Functions ---------------------------
-
-function Write-Log {
-    [CmdletBinding()]
-    param (
-        [Parameter(Mandatory=$true)]
-        [string]$Message,
-        
-        [ValidateSet("INFO", "ERROR", "WARN", "DEBUG")]
-        [string]$Level = "INFO"
-    )
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "$timestamp [$Level] $Message"
-    Write-Output $logEntry
-    Add-Content -Path $logFile -Value $logEntry
-}
-
-function Install-RequiredModules {
-    # Check if the ArtifactoryExt repository is registered
-    $artifactory = Get-PSRepository "ArtifactoryExt" -ErrorAction SilentlyContinue
-
-    if (!$artifactory) {
-        Write-Log -Message "ArtifactoryExt repository not found. Attempting to add..." -Level "INFO"
-        try {
-            Register-PSRepository -Name ArtifactoryExt -SourceLocation "http://artifactory-prxy-a.wellsfargo.net/artifactory/api/nuget/powershell-gallery" -InstallationPolicy Trusted -ErrorAction Stop
-            Write-Log -Message "ArtifactoryExt repository added successfully." -Level "INFO"
-        }
-        catch {
-            Write-Log -Message "Failed to add ArtifactoryExt repository. Error: $_" -Level "ERROR"
-            throw "Repository registration failed. Exiting script."
-        }
-    }
-    else {
-        Write-Log -Message "ArtifactoryExt repository is already registered." -Level "INFO"
-    }
-
-    # Install required modules from ArtifactoryExt
-    foreach ($module in $requiredModules) {
-        if (-not (Get-Module -ListAvailable -Name $module)) {
-            try {
-                Write-Log -Message "Module '$module' not found. Attempting to install from $repository..." -Level "INFO"
-                Install-Module -Name $module -Scope CurrentUser -Repository $repository -Force -ErrorAction Stop
-                Write-Log -Message "Module '$module' installed successfully from $repository." -Level "INFO"
-            }
-            catch {
-                Write-Log -Message "Failed to install module '$module' from $repository. Error: $_" -Level "ERROR"
-                throw "Module installation failed. Exiting script."
-            }
-        }
-        else {
-            Write-Log -Message "Module '$module' is already installed." -Level "INFO"
-        }
-    }
-}
-
-function Select-ExcelFile {
-    # Attempt to retrieve Excel files using corrected Get-ChildItem usage
-    $excelFiles = Get-ChildItem -Path * -Include *.xlsx, *.xls -File -ErrorAction SilentlyContinue
-
-    # Alternative method using Where-Object if -Include fails
-    if ($excelFiles.Count -eq 0) {
-        $excelFiles = Get-ChildItem -Path . -File | Where-Object { $_.Extension -in ".xls", ".xlsx" }
-    }
-
-    if ($excelFiles.Count -eq 0) {
-        Write-Log -Message "No Excel files found in the current directory." -Level "ERROR"
-        throw "No Excel files to process. Exiting script."
-    }
-
-    Write-Log -Message "Listing Excel files for selection..." -Level "INFO"
-
-    # Check if Out-GridView is available
-    $outGridViewAvailable = $null
-    try {
-        $null = Get-Command Out-GridView -ErrorAction Stop
-        $outGridViewAvailable = $true
-    }
-    catch {
-        $outGridViewAvailable = $false
-    }
-
-    if ($outGridViewAvailable) {
-        # Use Out-GridView for GUI selection
-        $selectedFile = $excelFiles | Out-GridView -Title "Select an Excel File" -PassThru
-
-        if (-not $selectedFile) {
-            Write-Log -Message "No file selected by the user." -Level "WARN"
-            throw "No file selected. Exiting script."
-        }
-
-        Write-Log -Message "User selected file: $($selectedFile.Name)" -Level "INFO"
-        return $selectedFile.FullName
-    }
-    else {
-        # Fallback to console selection
-        Write-Output "Please select an Excel file from the list below by entering the corresponding number:"
-
-        for ($i = 0; $i -lt $excelFiles.Count; $i++) {
-            Write-Output "$($i + 1): $($excelFiles[$i].Name)"
-        }
-
-        $selection = Read-Host "Enter the number of the Excel file to select"
-
-        if (-not ([int]::TryParse($selection, [ref]$null)) -or $selection -lt 1 -or $selection -gt $excelFiles.Count) {
-            Write-Log -Message "Invalid selection made by the user." -Level "WARN"
-            throw "Invalid file selection. Exiting script."
-        }
-
-        $selectedFile = $excelFiles[$selection - 1]
-        Write-Log -Message "User selected file: $($selectedFile.Name)" -Level "INFO"
-        return $selectedFile.FullName
-    }
-}
-
-function Connect-ToGraph {
-    try {
-        Write-Log -Message "Attempting to connect to Microsoft Graph..." -Level "INFO"
-        Connect-MgGraph -Scopes "Device.Read.All", "Directory.Read.All" -ErrorAction Stop
-        Write-Log -Message "Successfully connected to Microsoft Graph." -Level "INFO"
-    }
-    catch {
-        Write-Log -Message "Failed to connect to Microsoft Graph. Error: $_" -Level "ERROR"
-        throw "Graph connection failed. Exiting script."
-    }
-}
-
-function Get-DeviceByAzureID {
-    param (
-        [Parameter(Mandatory=$true)]
-        [string]$AzureID
-    )
-
-    try {
-        # Retrieve the device using the Device ID
-        $device = Get-MgDevice -DeviceId $AzureID -Select "*" -ErrorAction SilentlyContinue
-
-        if (-not $device) {
-            Write-Log -Message "Device with Azure ID '$AzureID' not found using Get-MgDevice." -Level "WARN"
-            return $null
-        }
-
-        return $device
-    }
-    catch {
-        Write-Log -Message "Error retrieving device with Azure ID '$AzureID': $_" -Level "ERROR"
-        return $null
-    }
-}
-
-# --------------------------- Script Execution ---------------------------
-
-try {
-    # Start logging
-    Write-Log -Message "Script execution started." -Level "INFO"
-
-    # Install and import required modules
-    Install-RequiredModules
-    foreach ($module in $requiredModules) {
-        Import-Module -Name $module -Force -ErrorAction Stop
-        Write-Log -Message "Module '$module' imported successfully." -Level "INFO"
-    }
-
-    # Select Excel file
-    $excelFilePath = Select-ExcelFile
-
-    # Import Excel data
-    Write-Log -Message "Importing data from Excel file '$excelFilePath'." -Level "INFO"
-    $excelData = Import-Excel -Path $excelFilePath -ErrorAction Stop
-
-    if (-not ($excelData | Get-Member -Name 'Azure ID')) {
-        Write-Log -Message "The selected Excel file does not contain an 'Azure ID' column." -Level "ERROR"
-        throw "Missing 'Azure ID' column. Exiting script."
-    }
-
-    $azureIDs = $excelData.'Azure ID' | Where-Object { $_ -and $_.Trim() -ne "" } | Select-Object -Unique
-
-    if ($azureIDs.Count -eq 0) {
-        Write-Log -Message "No Azure IDs found in the 'Azure ID' column." -Level "ERROR"
-        throw "No Azure IDs to process. Exiting script."
-    }
-
-    Write-Log -Message "$($azureIDs.Count) unique Azure IDs found." -Level "INFO"
-
-    # Connect to Microsoft Graph
-    Connect-ToGraph
-
-    # Iterate through each Azure ID and retrieve device information
-    foreach ($id in $azureIDs) {
-        Write-Log -Message "Processing Azure ID: $id" -Level "INFO"
-        $device = Get-DeviceByAzureID -AzureID $id
-
-        if ($device) {
-            Write-Log -Message "Device found for Azure ID '$id'. Retrieving attributes..." -Level "INFO"
-            # Convert device object to a readable string
-            $deviceProperties = $device | Format-List | Out-String
-            Write-Log -Message "Attributes for Azure ID '$id':`n$deviceProperties" -Level "INFO"
-
-            # Optionally, you can also print to console
-            Write-Output "----- Device Attributes for Azure ID: $id -----"
-            Write-Output $deviceProperties
-        }
-        else {
-            Write-Log -Message "No device found for Azure ID '$id'." -Level "WARN"
-            Write-Output "No device found for Azure ID: $id"
-        }
-    }
-
-    Write-Log -Message "Script execution completed successfully." -Level "INFO"
-}
-catch {
-    Write-Log -Message "Script terminated with an error: $_" -Level "ERROR"
-    Write-Error "An error occurred: $_"
-}
-finally {
-    # Disconnect from Microsoft Graph if connected
-    try {
-        $graphContext = Get-MgContext -ErrorAction SilentlyContinue
-        if ($graphContext) {
-            Disconnect-MgGraph -Confirm:$false
-            Write-Log -Message "Disconnected from Microsoft Graph." -Level "INFO"
-        }
-    }
-    catch {
-        Write-Log -Message "Error while disconnecting from Microsoft Graph: $_" -Level "ERROR"
-    }
-}
+WITH TaskSequenceFailures AS (
+    SELECT
+        ts.Name AS TaskSequenceName,
+        vsmis.MachineName,
+        vsmis.Time AS FailureTime,
+        vsmis.Component AS FailedComponent,
+        vsmis.MessageID,
+        vsmis.Win32Error,
+        -- Parse InsStrings (standard TS failure format)
+        vsmis.InsString1 AS StepName,
+        vsmis.InsString2 AS ErrorDescription,
+        vsmis.InsString3 AS AdditionalInfo,
+        vsmis.InsString4 AS PackageID,
+        vsmis.InsString5 AS ExecutionTime,
+        ROW_NUMBER() OVER (
+            PARTITION BY vsmis.MachineName 
+            ORDER BY vsmis.Time DESC
+        ) AS FailureSequence,
+        cs.Model AS MachineModel,
+        os.Caption AS OSVersion,
+        DATEDIFF(MINUTE, LAG(vsmis.Time) OVER (
+            PARTITION BY vsmis.MachineName 
+            ORDER BY vsmis.Time
+        ), vsmis.Time) AS MinutesSinceLastFailure
+    FROM v_StatusWithInsStrings vsmis
+    INNER JOIN v_StatusAttributes vsm ON vsmis.RecordID = vsm.RecordID
+    INNER JOIN v_StatusAttributes vsm_guid ON 
+        vsm_guid.RecordID = vsm.RecordID 
+        AND vsm_guid.AttributeID = 427  -- TS GUID attribute
+        AND vsm_guid.AttributeValue = '50E01A80-4B8C-11EE-B270-AAB8E09F8500'
+    INNER JOIN v_TaskSequencePackage ts ON 
+        ts.PackageID = vsmis.InsString4  -- PackageID from InsStrings
+    LEFT JOIN v_GS_COMPUTER_SYSTEM cs ON 
+        cs.ResourceID = vsmis.MachineID
+    LEFT JOIN v_GS_OPERATING_SYSTEM os ON 
+        os.ResourceID = vsmis.MachineID
+    WHERE vsm.AttributeID = 401  -- Task Sequence Status Messages
+        AND vsm.AttributeTime > DATEADD(HOUR, -24, GETUTCDATE())  -- 24h window
+        AND vsmis.Severity = 1  -- Error messages only
+)
+SELECT 
+    TaskSequenceName,
+    MachineName,
+    MachineModel,
+    OSVersion,
+    FailureTime,
+    FailedComponent,
+    StepName,
+    ErrorDescription,
+    AdditionalInfo,
+    PackageID,
+    ExecutionTime,
+    MessageID,
+    CASE 
+        WHEN Win32Error IS NOT NULL 
+        THEN '0x' + RIGHT('00000000' + CAST(CAST(Win32Error AS varbinary(4)) AS varchar(8)), 8)
+        ELSE NULL 
+    END AS FormattedWin32Error,
+    (SELECT Description FROM v_StatusMessage 
+     WHERE MessageID = tf.MessageID) AS MessageDescription,
+    MinutesSinceLastFailure,
+    (SELECT MAX(ExecutionTime) FROM TaskSequenceFailures 
+     WHERE MachineName = tf.MachineName 
+        AND FailureSequence < tf.FailureSequence
+    ) AS PreviousStepDuration
+FROM TaskSequenceFailures tf
+WHERE FailureSequence = 1  -- Only show most recent failure per machine
+ORDER BY FailureTime DESC
+OPTION (RECOMPILE, USE HINT('FORCE_LEGACY_CARDINALITY_ESTIMATION'));
