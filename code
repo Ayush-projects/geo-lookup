@@ -1,7 +1,48 @@
-select
-SMS_StatusMessage.*,SMS_StatMsgInsStrings.*,SMS_StatMsgAttributes.*,SMS_StatMsgAttributes.AttributeTime
-from SMS_StatusMessage
-left join SMS_StatMsgInsStrings on SMS_StatMsgInsStrings.RecordID = SMS_StatusMessage.RecordID
-left join SMS_StatMsgAttributes on SMS_StatMsgAttributes.RecordID = SMS_StatusMessage.RecordID
-where SMS_StatMsgAttributes.AttributeID = 401 and SMS_StatMsgAttributes.AttributeValue = "1002000B" and SMS_StatMsgAttributes.AttributeTime >= ##PRM:SMS_StatMsgAttributes.AttributeTime##
-order by SMS_StatMsgAttributes.AttributeTime DESC
+SELECT
+    sys.Netbios_Name0 AS 'Machine Name',
+    tsd.PackageID AS 'Task Sequence ID',
+    tsd.DeploymentID,
+    adv.AdvertisementName AS 'Deployment Name',
+    tsd.CollectionID,
+    tsd.StartTime AS 'Deployment Start Time',
+    tsd.CompletionTime AS 'Deployment Completion Time',
+    CASE tsd.SecuredTypeID
+        WHEN 0 THEN 'Required'
+        WHEN 2 THEN 'Available'
+        ELSE 'Unknown'
+    END AS 'Deployment Type',
+    stat.StateName AS 'Last State',
+    execstat.LastStep AS 'Last Executed Step',
+    execstat.LastStepStartTime AS 'Last Step Start Time',
+    execstat.LastStepEndTime AS 'Last Step End Time',
+    CASE execstat.LastStepResult
+        WHEN 0 THEN 'Success'
+        ELSE 'Failure (Code: ' + CAST(execstat.LastStepResult AS VARCHAR) + ')'
+    END AS 'Last Step Result',
+    err.ErrorCode,
+    err.ErrorDescription,
+    statmsg.MessageID AS 'Status Message ID',
+    statmsg.Severity,
+    statmsg.MessageSubject,
+    statmsg.MessageBody,
+    statmsg.MessageTime AS 'Status Time',
+    adv.CreatedBy AS 'Deployment Created By',
+    adv.LastModifiedBy AS 'Last Modified By'
+
+FROM v_TaskSequenceDeploymentStatus tsd
+INNER JOIN v_TaskSequencePackage tsp ON tsd.PackageID = tsp.PackageID
+INNER JOIN v_Advertisement adv ON tsd.DeploymentID = adv.AdvertisementID
+INNER JOIN v_R_System sys ON tsd.ResourceID = sys.ResourceID
+LEFT JOIN v_StateNames stat ON tsd.StateType = stat.TopicType AND tsd.StateID = stat.StateID
+LEFT JOIN v_TaskExecutionStatus execstat ON tsd.ResourceID = execstat.ResourceID AND tsd.DeploymentID = execstat.AdvertisementID
+LEFT JOIN v_StatusMessage statmsg ON tsd.LastStatusMessageID = statmsg.RecordID
+LEFT JOIN v_OSDErrorStatus err ON tsd.ResourceID = err.ResourceID AND tsd.DeploymentID = err.AdvertisementID
+
+WHERE 
+    tsp.Name = 'Your Task Sequence Name'  -- Replace with your TS name
+    AND stat.TopicType = 512  -- Task Sequence State Messages
+    AND statmsg.ComponentID = 'TSMANAGER'  -- Task Sequence Manager component
+
+ORDER BY 
+    tsd.StartTime DESC,
+    statmsg.MessageTime DESC;
