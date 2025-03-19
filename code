@@ -1,69 +1,7 @@
-WITH TaskSequenceFailures AS (
-    SELECT
-        ts.Name AS TaskSequenceName,
-        vsmis.MachineName,
-        vsmis.Time AS FailureTime,
-        vsmis.Component AS FailedComponent,
-        vsmis.MessageID,
-        vsmis.Win32Error,
-        -- Parse InsStrings (standard TS failure format)
-        vsmis.InsString1 AS StepName,
-        vsmis.InsString2 AS ErrorDescription,
-        vsmis.InsString3 AS AdditionalInfo,
-        vsmis.InsString4 AS PackageID,
-        vsmis.InsString5 AS ExecutionTime,
-        ROW_NUMBER() OVER (
-            PARTITION BY vsmis.MachineName 
-            ORDER BY vsmis.Time DESC
-        ) AS FailureSequence,
-        cs.Model AS MachineModel,
-        os.Caption AS OSVersion,
-        DATEDIFF(MINUTE, LAG(vsmis.Time) OVER (
-            PARTITION BY vsmis.MachineName 
-            ORDER BY vsmis.Time
-        ), vsmis.Time) AS MinutesSinceLastFailure
-    FROM v_StatusWithInsStrings vsmis
-    INNER JOIN v_StatusAttributes vsm ON vsmis.RecordID = vsm.RecordID
-    INNER JOIN v_StatusAttributes vsm_guid ON 
-        vsm_guid.RecordID = vsm.RecordID 
-        AND vsm_guid.AttributeID = 427  -- TS GUID attribute
-        AND vsm_guid.AttributeValue = '50E01A80-4B8C-11EE-B270-AAB8E09F8500'
-    INNER JOIN v_TaskSequencePackage ts ON 
-        ts.PackageID = vsmis.InsString4  -- PackageID from InsStrings
-    LEFT JOIN v_GS_COMPUTER_SYSTEM cs ON 
-        cs.ResourceID = vsmis.MachineID
-    LEFT JOIN v_GS_OPERATING_SYSTEM os ON 
-        os.ResourceID = vsmis.MachineID
-    WHERE vsm.AttributeID = 401  -- Task Sequence Status Messages
-        AND vsm.AttributeTime > DATEADD(HOUR, -24, GETUTCDATE())  -- 24h window
-        AND vsmis.Severity = 1  -- Error messages only
-)
-SELECT 
-    TaskSequenceName,
-    MachineName,
-    MachineModel,
-    OSVersion,
-    FailureTime,
-    FailedComponent,
-    StepName,
-    ErrorDescription,
-    AdditionalInfo,
-    PackageID,
-    ExecutionTime,
-    MessageID,
-    CASE 
-        WHEN Win32Error IS NOT NULL 
-        THEN '0x' + RIGHT('00000000' + CAST(CAST(Win32Error AS varbinary(4)) AS varchar(8)), 8)
-        ELSE NULL 
-    END AS FormattedWin32Error,
-    (SELECT Description FROM v_StatusMessage 
-     WHERE MessageID = tf.MessageID) AS MessageDescription,
-    MinutesSinceLastFailure,
-    (SELECT MAX(ExecutionTime) FROM TaskSequenceFailures 
-     WHERE MachineName = tf.MachineName 
-        AND FailureSequence < tf.FailureSequence
-    ) AS PreviousStepDuration
-FROM TaskSequenceFailures tf
-WHERE FailureSequence = 1  -- Only show most recent failure per machine
-ORDER BY FailureTime DESC
-OPTION (RECOMPILE, USE HINT('FORCE_LEGACY_CARDINALITY_ESTIMATION'));
+select
+SMS_StatusMessage.*,SMS_StatMsgInsStrings.*,SMS_StatMsgAttributes.*,SMS_StatMsgAttributes.AttributeTime
+from SMS_StatusMessage
+left join SMS_StatMsgInsStrings on SMS_StatMsgInsStrings.RecordID = SMS_StatusMessage.RecordID
+left join SMS_StatMsgAttributes on SMS_StatMsgAttributes.RecordID = SMS_StatusMessage.RecordID
+where SMS_StatMsgAttributes.AttributeID = 401 and SMS_StatMsgAttributes.AttributeValue = "1002000B" and SMS_StatMsgAttributes.AttributeTime >= ##PRM:SMS_StatMsgAttributes.AttributeTime##
+order by SMS_StatMsgAttributes.AttributeTime DESC
