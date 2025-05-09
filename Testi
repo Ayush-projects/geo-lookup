@@ -1,0 +1,25 @@
+USE CM_MEM;  
+GO
+
+SELECT
+    vTSP.Name0        AS TaskSequenceName,
+    vADV.AdvertisementID AS DeploymentID,
+    VRS.Name0         AS ComputerName,
+    VRS.SerialNumber  AS SerialNumber,
+    vTS.ExecutionTime AS StepExecutionTime,
+    vTS.Step          AS StepNumber,
+    vTS.GroupName     AS StepGroupName,
+    vTS.ActionName    AS StepActionName,
+    vTS.LastStatusMessageIDName AS StepStatusMessage,
+    vTS.ExitCode      AS StepExitCode,
+    vTS.ActionOutput  AS StepActionOutput
+FROM
+    v_TaskExecutionStatus     vTS
+    LEFT JOIN v_R_System              VRS  ON vTS.ResourceID      = VRS.ResourceID
+    LEFT JOIN v_Advertisement          vADV ON vTS.AdvertisementID = vADV.AdvertisementID
+    LEFT JOIN v_TaskSequencePackage   vTSP ON vADV.PackageID      = vTSP.PackageID
+WHERE
+    VRS.SerialNumber = ''        -- your target serial #
+    AND vTSP.Name0    = 'Windows 11 Autopilot'  -- your TS package name
+ORDER BY
+    vTS.Step ASC;
